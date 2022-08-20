@@ -28,6 +28,13 @@
 #include "Transform.h"
 #include "Camera.h"
 
+#include "Input.h"
+//#include "VertexShader.h"
+//#include "FragmentShader.h"
+#include "Light.h"
+#include "Shader.h"
+#include "Material.h"
+
 #include "tiny_obj_loader.h"
 
 
@@ -42,11 +49,7 @@ public:
     SoftRasterizer(const SoftRasterizer& r) = delete;
     ~SoftRasterizer();
 
-    void drawTriangle(uchar* backBuffer, Triangle& tri, Vector4f color);
-    void setClearColor(const Vector4f& color);
-    void clear(uchar* backBuffer);
-    Vector4f screenMapping(Vector4f clipSpaceCoord) const;
-    void loadModel(const std::string& filename);
+    
 
 
 protected:
@@ -57,13 +60,32 @@ protected:
     void wheelEvent(QWheelEvent* e);
 
 private:
+    int drawTriangle(uchar* backBuffer, Triangle& tri);
+    int drawTriangleDepth(float* buffer, Triangle& tri);
+    int drawTriangleShadow(float* buffer, Triangle& tri);
+    void setClearColor(const Vector4f& color);
+    void clear();
+    Vector4f screenMapping(int screenWidth, int screenHeight, Vector4f clipSpaceCoord) const;
+    void loadModel(const std::string& filename);
+
     void testEigen();
     void resetCamera();
+    void resetShadowCamera();
+    void updateConstantBuffer();
+    void updateShadowConstantBuffer();
+    template<typename T>
+    inline T interpolate(const Vector3f& baryCoord, const T& a, const T& b, const T& c);
+    FragmentInput barycentricInterpolation(const FragmentInput* vertices, Vector3f& baryCoord);
+
+    void renderDepthMap();
+    void renderShadowMap();
+    void render();
 
     Ui::SoftRasterizerClass ui;
 
     const int imageWidth = 1920;
     const int imageHeight = 1080;
+    const int shadowWidth = 1024;
 
     QPixmap pix;
     QImage img;
@@ -71,9 +93,21 @@ private:
 
     int pixelSize;
     int bufferSize;
+
     uchar* frontBuffer;
-    uchar* clearBuffer;
-    float* depthBuffer;
+
+    //uchar* clearBuffer;
+    //std::unique_ptr<uchar[]> clearBuffer;
+    std::vector<uchar> clearBuffer;
+
+    //float* depthBuffer;
+    //std::unique_ptr<float[]> depthBuffer;
+    bool earlyZ = false;
+    std::vector<float> depthBuffer;
+
+    std::vector<std::vector<float>> shadowMaps;
+
+    //std::vector<
 
     Vector4f clearColor;
 
@@ -83,8 +117,27 @@ private:
     clock_t lastFrameTime;
     float deltaTime;
 
-    Matrix4f M;
-    Matrix4f MVP;
+    Matrix4f modelMatrix;
+    //Matrix4f V;
+    //Matrix4f P;
+    //Matrix4f MVP;
 
     tinyobj::ObjReader reader;
+
+    DirectionalLight mainLight;
+    ConstantBuffer cb;
+    Material m;
+
+    //VertexShader vertexShader;
+    //FragmentShader fragmentShader;
+
+    ConstantBuffer shadowCb;
+    Material shadowMaterial;
+    DirectionalLightShadowCamera shadowCam;
 };
+
+template<typename T>
+inline T SoftRasterizer::interpolate(const Vector3f& baryCoord, const T& a, const T& b, const T& c)
+{
+    return baryCoord.x() * a + baryCoord.y() * b + baryCoord.z() * c;
+}

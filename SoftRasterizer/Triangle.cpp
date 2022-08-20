@@ -62,12 +62,23 @@ void Triangle::setColors(const std::array<Vector4f, 3>& colors)
     this->colors[2] = colors[2];
 }
 
-bool Triangle::pointInsideTriangle(float x, float y, Vector3f& baryCoord) const
+Vector3f Triangle::precomputeLineEquations(float x, float y) const
 {
     Vector3f p(x, y, 1);
     float r0 = computeLineEquation(p, 0);
     float r1 = computeLineEquation(p, 1);
     float r2 = computeLineEquation(p, 2);
+
+    //qDebug("r0 = %f, r1 = %f, r2 = %f", r0, r1, r2);
+    return Vector3f(r0, r1, r2);
+}
+
+bool Triangle::pointInsideTriangleFast(float x, float y, const Vector3f& r, Vector3f& baryCoord) const
+{
+    Vector3f p(x, y, 1);
+    float r0 = r.x();
+    float r1 = r.y();
+    float r2 = r.z();
 
     //qDebug("r0 = %f, r1 = %f, r2 = %f", r0, r1, r2);
 

@@ -56,4 +56,9 @@ public:
 	Matrix4f projection;
 };
 
+class DirectionalLightShadowCamera : public Camera {
+public:
+	void updateProjection();
+};
+
 #endif // !CAMERA_H

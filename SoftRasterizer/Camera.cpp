@@ -129,3 +129,18 @@ void Camera::rotateAroundY(float radian)
 	target = pos + newViewDir;
 }
 
+void DirectionalLightShadowCamera::updateProjection()
+{
+	float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
+	float c = 1.0 / std::tan(halfRadianFov);
+
+	c = c / near;
+
+	projection(0, 0) = c / ratio;
+	projection(1, 1) = c;
+	//projection(2, 2) = 1 / (far - near);
+	//projection(2, 3) = -near / (far - near);
+	projection(2, 2) = -1 / (far - near);
+	projection(2, 3) = far / (far - near);
+	projection(3, 3) = 1;
+}
