@@ -25,6 +25,8 @@ struct ShaderProperties {
 typedef std::function<FragmentInput(const ConstantBuffer& cb, const ShaderProperties& sp, VertexInput&)> VertexShader;
 typedef std::function<Vector3f(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput&)> FragmentShader;
 
+float sampleShadowMap(const float* shadowMap, const Vector2f& uv, float depth);
+
 FragmentInput CommonVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input);
 Vector3f BlinnPhongFragmentShader(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput& input);
 

@@ -1,5 +1,6 @@
 #pragma once
 
+//#define TINYOBJLOADER_IMPLEMENTATION // define this in only *one* .cc
 #include <QtWidgets/QMainWindow>
 #include "ui_SoftRasterizer.h"
 
@@ -36,6 +37,7 @@
 #include "Material.h"
 
 #include "tiny_obj_loader.h"
+#include "FastRenderer.h"
 
 
 using Eigen::MatrixXd;
@@ -68,23 +70,29 @@ private:
     Vector4f screenMapping(int screenWidth, int screenHeight, Vector4f clipSpaceCoord) const;
     void loadModel(const std::string& filename);
 
-    void testEigen();
     void resetCamera();
+    void resetModelMatrix();
     void resetShadowCamera();
     void updateConstantBuffer();
     void updateShadowConstantBuffer();
     template<typename T>
     inline T interpolate(const Vector3f& baryCoord, const T& a, const T& b, const T& c);
-    FragmentInput barycentricInterpolation(const FragmentInput* vertices, Vector3f& baryCoord);
+    FragmentInput barycentricInterpolation(const FragmentInput* vertices, Vector3f& baryCoord, Vector3f& perspectiveBaryCoord);
 
     void renderDepthMap();
     void renderShadowMap();
     void render();
 
+    //std::unique_ptr<Renderer> r;
+    FastRenderer* r;
     Ui::SoftRasterizerClass ui;
 
     const int imageWidth = 1920;
     const int imageHeight = 1080;
+
+    //const int imageWidth = 400;
+    //const int imageHeight = 400;
+
     const int shadowWidth = 1024;
 
     QPixmap pix;

@@ -1,14 +1,12 @@
-#define TINYOBJLOADER_IMPLEMENTATION // define this in only *one* .cc
 #include "SoftRasterizer.h"
 
 SoftRasterizer::SoftRasterizer(QWidget* parent)
     :
     QMainWindow(parent),
+    r(nullptr),
     pixelSize(imageWidth* imageHeight),
     bufferSize(imageWidth* imageHeight * 4),
-    //clearBuffer(new uchar[bufferSize]),
     clearBuffer(bufferSize, 0),
-    //depthBuffer(new float[pixelSize]),
     depthBuffer(pixelSize),
     shadowMaps(4),
     img(imageWidth, imageHeight, QImage::Format_RGBA8888),
@@ -17,14 +15,21 @@ SoftRasterizer::SoftRasterizer(QWidget* parent)
     lastFrameMousePos(0, 0),
     deltaTime(0),
     modelMatrix(Matrix4f::Identity())
-    //V(Matrix4f::Identity()),
-    //P(Matrix4f::Identity()),
-    //MVP(Matrix4f::Identity())
-    //vertexShader(BlinnPhongVertexShader),
-    //fragmentShader(BlinnPhongFragmentShader)
 {
     ui.setupUi(this);
     resize(1920, 1080);
+
+    //r.reset(new Renderer(imageWidth, imageHeight, shadowWidth));
+    r = new FastRenderer(imageWidth, imageHeight, shadowWidth);
+    r->setReader(&reader);
+    r->setCamera(&cam);
+    r->setShadowCamera(&shadowCam);
+    r->setMainLight(&mainLight);
+    r->setMaterial(&m);
+    r->setShadowMaterial(&shadowMaterial);
+    r->setModelMatrix(&modelMatrix);
+    r->setConstantBuffer(&cb);
+    r->setShadowConstantBuffer(&shadowCb);
 
     shadowMaps[0].resize(shadowWidth*shadowWidth, 0.0f);
     shadowMaps[1].resize((shadowWidth/2) * (shadowWidth/2), 0.0f);
@@ -50,11 +55,12 @@ SoftRasterizer::SoftRasterizer(QWidget* parent)
     loadModel("");
 
     mainLight.color = Vector3f(1, 1, 1);
-    mainLight.direction = Vector3f(0, 1, 0);
-    mainLight.position = Vector3f(0, 40, 0);
+    //mainLight.direction = Vector3f(0, 1, 0);
+    //mainLight.position = Vector3f(0, 10, 0);
+    mainLight.direction = Vector3f(1, 1, 0);
+    mainLight.position = Vector3f(10, 10, 0);
 
     cb.mainLight = mainLight;
-    updateConstantBuffer();
 
     m.shaderProps.albedo = Vector3f(0.9, 0.5, 0.5);
     m.shaderProps.specular = Vector3f(0.1, 0.1, 0.1);
@@ -73,12 +79,15 @@ SoftRasterizer::SoftRasterizer(QWidget* parent)
     shadowCam.updateProjection();
     shadowCam.updateTransform();
     updateShadowConstantBuffer();
+
+    updateConstantBuffer();
 }
 
 SoftRasterizer::~SoftRasterizer()
 {
     //delete[] clearBuffer;
     //delete[] depthBuffer;
+    delete r;
 }
 
 int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
@@ -91,6 +100,9 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
 
     Vector3f crossNormal = -((b - a).cross(c - b)).normalized();
     Vector3f aveNormal = (tri.normals[0] + tri.normals[1] + tri.normals[2]).normalized();
+    Vector3f avePos = (a + b + c)/3;
+
+
     if (crossNormal.dot(aveNormal) < 0) {
         //qDebug() << "not counter clockwise";
         std::swap(tri.v[0], tri.v[2]);
@@ -98,6 +110,7 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
         std::swap(tri.texCoords[0], tri.texCoords[2]);
         std::swap(tri.colors[0], tri.colors[2]);
     }
+
 
     FragmentInput fi[3];
     for (int i = 0; i < 3; ++i) {
@@ -107,6 +120,15 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
         fi[i] = m.vertexShader(cb, m.shaderProps, vi);
     }
 
+    Vector3f viewDir = cam.pos - avePos;
+    aveNormal = (fi[0].normalWS + fi[1].normalWS + fi[2].normalWS).normalized();
+    if (viewDir.dot(aveNormal) < 0) {
+        return 0;
+    }
+
+    if (fi[0].positionCS.w() < 0 || fi[1].positionCS.w() < 0 || fi[2].positionCS.w() < 0)
+        return 0;
+
     screenSpaceTri.v[0] = screenMapping(imageWidth, imageHeight, fi[0].positionCS);
     screenSpaceTri.normals[0] = fi[0].normalWS;
 
@@ -115,41 +137,6 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
 
     screenSpaceTri.v[2] = screenMapping(imageWidth, imageHeight, fi[2].positionCS);
     screenSpaceTri.normals[2] = fi[2].normalWS;
-
-    bool clip = true;
-    for (int i = 0; i < 3; ++i) {
-        if (screenSpaceTri.v[i].x() >= 0 && screenSpaceTri.v[i].x() <= imageWidth &&
-            screenSpaceTri.v[i].y() >= 0 && screenSpaceTri.v[i].y() <= imageHeight &&
-            screenSpaceTri.v[i].z() >= 0 && screenSpaceTri.v[i].z() < 1
-            ) {
-            clip = false;
-            break;
-        }
-    }
-
-    if (clip) return 0;
-
-    //Triangle rasterized;
-    //rasterized.v[0] = screenMapping(MVP * tri.v[0]);
-    //rasterized.v[1] = screenMapping(MVP * tri.v[1]);
-    //rasterized.v[2] = screenMapping(MVP * tri.v[2]);
-
-
-    //Vector4f cs0 = MVP * tri.v[0];
-    //Vector4f cs1 = MVP * tri.v[1];
-    //Vector4f cs2 = MVP * tri.v[2];
-    ////assert(fi[0].positionCS == cs0);
-    ////assert(fi[1].positionCS == cs1);
-    ////assert(fi[2].positionCS == cs2);
-
-    //Matrix3f model = M.topLeftCorner(3, 3);
-    //rasterized.normals[0] = model * tri.normals[0];
-    //rasterized.normals[1] = model * tri.normals[1];
-    //rasterized.normals[2] = model * tri.normals[2];
-
-    //assert(rasterized.normals[0] == screenSpaceTri.normals[0]);
-    //assert(rasterized.normals[1] == screenSpaceTri.normals[1]);
-    //assert(rasterized.normals[2] == screenSpaceTri.normals[2]);
 
     screenSpaceTri.updateInfo();
     //rasterized.updateInfo();
@@ -164,15 +151,6 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
         maxy = screenSpaceTri.v[i].y() > maxy ? screenSpaceTri.v[i].y() : maxy;
     }
 
-    //float minx = imageWidth, miny = imageHeight;
-    //float maxx = 0, maxy = 0;
-    //for (int i = 0; i < 3; i++) {
-    //    minx = rasterized.v[i].x() < minx ? rasterized.v[i].x() : minx;
-    //    maxx = rasterized.v[i].x() > maxx ? rasterized.v[i].x() : maxx;
-
-    //    miny = rasterized.v[i].y() < miny ? rasterized.v[i].y() : miny;
-    //    maxy = rasterized.v[i].y() > maxy ? rasterized.v[i].y() : maxy;
-    //}
 
     int iminx = floor(minx);
     int imaxx = ceil(maxx);
@@ -189,35 +167,62 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
     //clock_t start, stop;
     //start = clock();
     int counter = 0;
-    Vector3f bary(0, 0, 0);
+    Vector3f baryCoord(0, 0, 0);
+    Vector3f perspectiveBaryCoord(0, 0, 0);
 
 
-    Vector3f equationResult = screenSpaceTri.precomputeLineEquations(iminx + 0.5, iminy + 0.5);
-    for (int x = iminx; x <= imaxx; x++) {
-        for (int y = iminy; y <= imaxy; y++) {
+	for (int y = iminy; y <= imaxy; y++) {
+		//Vector3f equationResult = screenSpaceTri.precomputeLineEquations(iminx + 0.5, y + 0.5);
+		for (int x = iminx; x <= imaxx; x++) {
             int pixelIndex = x + (imageHeight - 1 - y) * imageWidth;
             int startIndex = pixelIndex*4;
-            Vector3f currResult;
-            int xoffset = x - iminx;
-            int yoffset = y - iminy;
-            currResult.x() = equationResult.x() + xoffset * screenSpaceTri.edgeCoeffs[0].x() + yoffset * screenSpaceTri.edgeCoeffs[0].y();
-            currResult.y() = equationResult.y() + xoffset * screenSpaceTri.edgeCoeffs[1].x() + yoffset * screenSpaceTri.edgeCoeffs[1].y();
-            currResult.z() = equationResult.z() + xoffset * screenSpaceTri.edgeCoeffs[2].x() + yoffset * screenSpaceTri.edgeCoeffs[2].y();
-            if (screenSpaceTri.pointInsideTriangleFast(x+0.5, y+0.5, currResult, bary)) {
-                float depth = bary.x() * screenSpaceTri.v[0].z() + bary.y() * screenSpaceTri.v[1].z() + bary.z() * screenSpaceTri.v[2].z();
-                //float xCoord = bary.x() * screenSpaceTri.v[0].x() + bary.y() * screenSpaceTri.v[1].x() + bary.z() * screenSpaceTri.v[2].x();
-                //float yCoord = bary.x() * screenSpaceTri.v[0].y() + bary.y() * screenSpaceTri.v[1].y() + bary.z() * screenSpaceTri.v[2].y();
+            //Vector3f currResult;
+            //int xoffset = x - iminx;
+            //int yoffset = y - iminy;
+            //currResult.x() = equationResult.x() + xoffset * screenSpaceTri.edgeCoeffs[0].x() + yoffset * screenSpaceTri.edgeCoeffs[0].y();
+            //currResult.y() = equationResult.y() + xoffset * screenSpaceTri.edgeCoeffs[1].x() + yoffset * screenSpaceTri.edgeCoeffs[1].y();
+            //currResult.z() = equationResult.z() + xoffset * screenSpaceTri.edgeCoeffs[2].x() + yoffset * screenSpaceTri.edgeCoeffs[2].y();
+            //if (screenSpaceTri.pointInsideTriangleFast(x+0.5, y+0.5, currResult, bary)) {
+            if (screenSpaceTri.pointInsideTriangle(x+0.5, y+0.5, baryCoord, perspectiveBaryCoord)) {
+                //float realZ =
+                    //perspectiveBaryCoord.x() * (1 / screenSpaceTri.v[0].w()) +
+                    //perspectiveBaryCoord.y() * (1 / screenSpaceTri.v[1].w()) +
+                    //perspectiveBaryCoord.z() * (1 / screenSpaceTri.v[2].w());
+                //float realDepth = (cam.far / realZ - 1) / (cam.far / cam.near - 1);
+                float depth = baryCoord.x() * screenSpaceTri.v[0].z() + baryCoord.y() * screenSpaceTri.v[1].z() + baryCoord.z() * screenSpaceTri.v[2].z();
+                //float xCoord = baryCoord.x() * screenSpaceTri.v[0].x() + baryCoord.y() * screenSpaceTri.v[1].x() + baryCoord.z() * screenSpaceTri.v[2].x();
+                //float yCoord = baryCoord.x() * screenSpaceTri.v[0].y() + baryCoord.y() * screenSpaceTri.v[1].y() + baryCoord.z() * screenSpaceTri.v[2].y();
 
-                if (depth > 0 && depth < 1 && depth >= depthBuffer[pixelIndex]) {
-                //if (depth == depthBuffer[pixelIndex]) {
+                //if (
+                //    x == 620 && imageHeight - 1 - y == 617
+                //    ) {
+                //    qDebug("BaryCoord = (%f, %f, %f)", baryCoord.x(), baryCoord.y(), baryCoord.z());
+                //    qDebug("perspectiveBaryCoord = (%f, %f, %f)", perspectiveBaryCoord.x(), perspectiveBaryCoord.y(), perspectiveBaryCoord.z());
+                //    qDebug("tri.v[0] = (%f, %f, %f, %f)", tri.v[0].x(), tri.v[0].y(), tri.v[0].z(), tri.v[0].w());
+                //    qDebug("tri.v[1] = (%f, %f, %f, %f)", tri.v[1].x(), tri.v[1].y(), tri.v[1].z(), tri.v[1].w());
+                //    qDebug("tri.v[2] = (%f, %f, %f, %f)", tri.v[2].x(), tri.v[2].y(), tri.v[2].z(), tri.v[2].w());
+                //    qDebug("screenSpaceTri.v[0] = (%f, %f, %f, %f)", screenSpaceTri.v[0].x(), screenSpaceTri.v[0].y(), screenSpaceTri.v[0].z(), screenSpaceTri.v[0].w());
+                //    qDebug("screenSpaceTri.v[1] = (%f, %f, %f, %f)", screenSpaceTri.v[1].x(), screenSpaceTri.v[1].y(), screenSpaceTri.v[1].z(), screenSpaceTri.v[1].w());
+                //    qDebug("screenSpaceTri.v[2] = (%f, %f, %f, %f)", screenSpaceTri.v[2].x(), screenSpaceTri.v[2].y(), screenSpaceTri.v[2].z(), screenSpaceTri.v[2].w());
+
+                //    qDebug("xCoord = %f, yCoord = %f, x = %d, y = %d", xCoord, yCoord, x, y);
+                //    qDebug("input.positionCS = (%f, %f, %f, %f)", input.positionCS.x(), input.positionCS.y(), input.positionCS.z(), input.positionCS.w());
+                //    qDebug("input.positionWS = (%f, %f, %f, %f)", input.positionWS.x(), input.positionWS.y(), input.positionWS.z(), input.positionWS.w());
+                //    qDebug("realZ = %f", realZ);
+                //    qDebug("realDepth = %f, depth = %f", realDepth, depth);
+                //    qDebug("depthBuffer = %f", depthBuffer[pixelIndex]);
+                //    qDebug("");
+                //    continue;
+                //}
+
+
+                //if (realDepth > 0 && realDepth < 1 && realDepth > depthBuffer[pixelIndex])
+                if (depth > 0 && depth < 1 && depth > depthBuffer[pixelIndex])
+                {
+
                     depthBuffer[pixelIndex] = depth;
-
-					//Vector3f normal = bary.x() * rasterized.normals[0] + bary.y() * rasterized.normals[1] + bary.z() * rasterized.normals[2];
-                    FragmentInput input = barycentricInterpolation(fi, bary);
-                    //if (xCoord < 0 || xCoord >= imageWidth ||
-                        //yCoord < 0 || yCoord >= imageHeight
-					//)
-                        //continue;
+					FragmentInput input = barycentricInterpolation(fi, baryCoord, perspectiveBaryCoord);
+                    //qDebug("depth = %f, input depth = %f", depth, input.positionCS.z() / input.positionCS.w());
                     //Vector3f color = fs->process(input);
                     //Vector3f color = fragmentShader(cb, m.matData, input);
                     ++counter;
@@ -225,8 +230,6 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
                     color.x() = std::min(color.x(), 1.0f);
                     color.y() = std::min(color.y(), 1.0f);
                     color.z() = std::min(color.z(), 1.0f);
-                    //float invMaxColor = 1.0f / color.maxCoeff();
-                    //color *= std::min(1.0f, invMaxColor);
 
                     backBuffer[startIndex + 0] = color.x() * 255.99;
                     backBuffer[startIndex + 1] = color.y() * 255.99;
@@ -236,9 +239,6 @@ int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
             }
         }
     }
-    //stop = clock();
-    //qDebug() << "rasterize a triangle took " << double(stop - start) / CLOCKS_PER_SEC << " s";
-    //qDebug() << "run fragment shader " << counter << " times";
     return counter;
 }
 
@@ -252,6 +252,8 @@ int SoftRasterizer::drawTriangleDepth(float* buffer, Triangle& tri)
 
     Vector3f crossNormal = -((b - a).cross(c - b)).normalized();
     Vector3f aveNormal = (tri.normals[0] + tri.normals[1] + tri.normals[2]).normalized();
+    Vector3f avePos = (a + b + c)/3;
+
     if (crossNormal.dot(aveNormal) < 0) {
         //qDebug() << "not counter clockwise";
         std::swap(tri.v[0], tri.v[2]);
@@ -259,6 +261,7 @@ int SoftRasterizer::drawTriangleDepth(float* buffer, Triangle& tri)
         std::swap(tri.texCoords[0], tri.texCoords[2]);
         std::swap(tri.colors[0], tri.colors[2]);
     }
+
 
     FragmentInput fi[3];
     for (int i = 0; i < 3; ++i) {
@@ -268,6 +271,15 @@ int SoftRasterizer::drawTriangleDepth(float* buffer, Triangle& tri)
         fi[i] = m.vertexShader(cb, m.shaderProps, vi);
     }
 
+    Vector3f viewDir = cam.pos - avePos;
+    aveNormal = (fi[0].normalWS + fi[1].normalWS + fi[2].normalWS).normalized();
+    if (viewDir.dot(aveNormal) < 0) {
+        return 0;
+    }
+
+    if (fi[0].positionCS.w() < 0 || fi[1].positionCS.w() < 0 || fi[2].positionCS.w() < 0)
+        return 0;
+
     screenSpaceTri.v[0] = screenMapping(imageWidth, imageHeight, fi[0].positionCS);
     screenSpaceTri.normals[0] = fi[0].normalWS;
 
@@ -276,20 +288,6 @@ int SoftRasterizer::drawTriangleDepth(float* buffer, Triangle& tri)
 
     screenSpaceTri.v[2] = screenMapping(imageWidth, imageHeight, fi[2].positionCS);
     screenSpaceTri.normals[2] = fi[2].normalWS;
-
-    bool clip = true;
-    for (int i = 0; i < 3; ++i) {
-        if (screenSpaceTri.v[i].x() >= 0 && screenSpaceTri.v[i].x() <= imageWidth &&
-            screenSpaceTri.v[i].y() >= 0 && screenSpaceTri.v[i].y() <= imageHeight &&
-            screenSpaceTri.v[i].z() >= 0 && screenSpaceTri.v[i].z() < 1
-            ) {
-            clip = false;
-            break;
-        }
-    }
-
-    if (clip) return 0;
-
 
     screenSpaceTri.updateInfo();
 
@@ -314,24 +312,26 @@ int SoftRasterizer::drawTriangleDepth(float* buffer, Triangle& tri)
     iminy = std::max(0, iminy);
     imaxy = std::min(imageHeight - 1, imaxy);
 
-    Vector3f bary(0, 0, 0);
+    Vector3f baryCoord(0, 0, 0);
+    Vector3f perspectiveBaryCoord(0, 0, 0);
 
-    Vector3f equationResult = screenSpaceTri.precomputeLineEquations(iminx + 0.5, iminy + 0.5);
+    //Vector3f equationResult = screenSpaceTri.precomputeLineEquations(iminx + 0.5, iminy + 0.5);
     for (int x = iminx; x <= imaxx; x++) {
         for (int y = iminy; y <= imaxy; y++) {
             int pixelIndex = x + (imageHeight - 1 - y) * imageWidth;
             //int startIndex = pixelIndex * 4;
             int startIndex = pixelIndex;
             Vector3f currResult;
-            int xoffset = x - iminx;
-            int yoffset = y - iminy;
-            currResult.x() = equationResult.x() + xoffset * screenSpaceTri.edgeCoeffs[0].x() + yoffset * screenSpaceTri.edgeCoeffs[0].y();
-            currResult.y() = equationResult.y() + xoffset * screenSpaceTri.edgeCoeffs[1].x() + yoffset * screenSpaceTri.edgeCoeffs[1].y();
-            currResult.z() = equationResult.z() + xoffset * screenSpaceTri.edgeCoeffs[2].x() + yoffset * screenSpaceTri.edgeCoeffs[2].y();
-            if (screenSpaceTri.pointInsideTriangleFast(x + 0.5, y + 0.5, currResult, bary)) {
-                float depth = bary.x() * screenSpaceTri.v[0].z() + bary.y() * screenSpaceTri.v[1].z() + bary.z() * screenSpaceTri.v[2].z();
-                //float xCoord = bary.x() * screenSpaceTri.v[0].x() + bary.y() * screenSpaceTri.v[1].x() + bary.z() * screenSpaceTri.v[2].x();
-                //float yCoord = bary.x() * screenSpaceTri.v[0].y() + bary.y() * screenSpaceTri.v[1].y() + bary.z() * screenSpaceTri.v[2].y();
+            //int xoffset = x - iminx;
+            //int yoffset = y - iminy;
+            //currResult.x() = equationResult.x() + xoffset * screenSpaceTri.edgeCoeffs[0].x() + yoffset * screenSpaceTri.edgeCoeffs[0].y();
+            //currResult.y() = equationResult.y() + xoffset * screenSpaceTri.edgeCoeffs[1].x() + yoffset * screenSpaceTri.edgeCoeffs[1].y();
+            //currResult.z() = equationResult.z() + xoffset * screenSpaceTri.edgeCoeffs[2].x() + yoffset * screenSpaceTri.edgeCoeffs[2].y();
+            if (screenSpaceTri.pointInsideTriangle(x+0.5, y+0.5, baryCoord, perspectiveBaryCoord)) {
+            //if (screenSpaceTri.pointInsideTriangleFast(x + 0.5, y + 0.5, currResult, bary)) {
+                float depth = baryCoord.x() * screenSpaceTri.v[0].z() + baryCoord.y() * screenSpaceTri.v[1].z() + baryCoord.z() * screenSpaceTri.v[2].z();
+                //float xCoord = baryCoord.x() * screenSpaceTri.v[0].x() + baryCoord.y() * screenSpaceTri.v[1].x() + baryCoord.z() * screenSpaceTri.v[2].x();
+                //float yCoord = baryCoord.x() * screenSpaceTri.v[0].y() + baryCoord.y() * screenSpaceTri.v[1].y() + baryCoord.z() * screenSpaceTri.v[2].y();
 
                 if (depth > 0 && depth < 1 && depth > depthBuffer[pixelIndex]) {
                     depthBuffer[pixelIndex] = depth;
@@ -352,6 +352,7 @@ int SoftRasterizer::drawTriangleShadow(float* buffer, Triangle& tri)
 
     Vector3f crossNormal = -((b - a).cross(c - b)).normalized();
     Vector3f aveNormal = (tri.normals[0] + tri.normals[1] + tri.normals[2]).normalized();
+    Vector3f avePos = (a + b + c)/3;
     if (crossNormal.dot(aveNormal) < 0) {
         //qDebug() << "not counter clockwise";
         std::swap(tri.v[0], tri.v[2]);
@@ -369,6 +370,15 @@ int SoftRasterizer::drawTriangleShadow(float* buffer, Triangle& tri)
         //fi[i] = shadowMaterial.vertexShader(cb, shadowMaterial.shaderProps, vi);
     }
 
+    Vector3f viewDir = shadowCam.pos - shadowCam.target;
+    aveNormal = (fi[0].normalWS + fi[1].normalWS + fi[2].normalWS).normalized();
+    if (viewDir.dot(aveNormal) < 0) {
+        return 0;
+    }
+
+    if (fi[0].positionCS.w() < 0 || fi[1].positionCS.w() < 0 || fi[2].positionCS.w() < 0)
+        return 0;
+
     screenSpaceTri.v[0] = screenMapping(shadowWidth, shadowWidth, fi[0].positionCS);
     screenSpaceTri.normals[0] = fi[0].normalWS;
 
@@ -377,20 +387,6 @@ int SoftRasterizer::drawTriangleShadow(float* buffer, Triangle& tri)
 
     screenSpaceTri.v[2] = screenMapping(shadowWidth, shadowWidth, fi[2].positionCS);
     screenSpaceTri.normals[2] = fi[2].normalWS;
-
-    bool clip = true;
-    for (int i = 0; i < 3; ++i) {
-        if (screenSpaceTri.v[i].x() >= 0 && screenSpaceTri.v[i].x() <= shadowWidth &&
-            screenSpaceTri.v[i].y() >= 0 && screenSpaceTri.v[i].y() <= shadowWidth &&
-            screenSpaceTri.v[i].z() >= 0 && screenSpaceTri.v[i].z() < 1
-            ) {
-            clip = false;
-            break;
-        }
-    }
-
-    if (clip) return 0;
-
 
     screenSpaceTri.updateInfo();
 
@@ -415,7 +411,8 @@ int SoftRasterizer::drawTriangleShadow(float* buffer, Triangle& tri)
     iminy = std::max(0, iminy);
     imaxy = std::min(shadowWidth - 1, imaxy);
 
-    Vector3f bary(0, 0, 0);
+    Vector3f baryCoord(0, 0, 0);
+    Vector3f perspectiveBaryCoord(0, 0, 0);
 
     Vector3f equationResult = screenSpaceTri.precomputeLineEquations(iminx + 0.5, iminy + 0.5);
     for (int x = iminx; x <= imaxx; x++) {
@@ -429,8 +426,9 @@ int SoftRasterizer::drawTriangleShadow(float* buffer, Triangle& tri)
             currResult.x() = equationResult.x() + xoffset * screenSpaceTri.edgeCoeffs[0].x() + yoffset * screenSpaceTri.edgeCoeffs[0].y();
             currResult.y() = equationResult.y() + xoffset * screenSpaceTri.edgeCoeffs[1].x() + yoffset * screenSpaceTri.edgeCoeffs[1].y();
             currResult.z() = equationResult.z() + xoffset * screenSpaceTri.edgeCoeffs[2].x() + yoffset * screenSpaceTri.edgeCoeffs[2].y();
-            if (screenSpaceTri.pointInsideTriangleFast(x + 0.5, y + 0.5, currResult, bary)) {
-                float depth = bary.x() * screenSpaceTri.v[0].z() + bary.y() * screenSpaceTri.v[1].z() + bary.z() * screenSpaceTri.v[2].z();
+            //if (screenSpaceTri.pointInsideTriangleFast(x + 0.5, y + 0.5, currResult, bary)) {
+            if (screenSpaceTri.pointInsideTriangle(x+0.5, y+0.5, baryCoord, perspectiveBaryCoord)) {
+                float depth = baryCoord.x() * screenSpaceTri.v[0].z() + baryCoord.y() * screenSpaceTri.v[1].z() + baryCoord.z() * screenSpaceTri.v[2].z();
                 //float xCoord = bary.x() * screenSpaceTri.v[0].x() + bary.y() * screenSpaceTri.v[1].x() + bary.z() * screenSpaceTri.v[2].x();
                 //float yCoord = bary.x() * screenSpaceTri.v[0].y() + bary.y() * screenSpaceTri.v[1].y() + bary.z() * screenSpaceTri.v[2].y();
 
@@ -512,39 +510,34 @@ void SoftRasterizer::loadModel(const std::string& filename)
 
 void SoftRasterizer::paintEvent(QPaintEvent*)
 {
-    //MyTransform t;
-    //t.rotate(Vector3f(0, 1, 0), M_PI/4);
-    //t.translate(Vector3f(100, 200, 123));
-    //t.print();
     clock_t currTime = clock();
     deltaTime = float(currTime - lastFrameTime) / CLOCKS_PER_SEC;
     lastFrameTime = currTime;
 
-    updateConstantBuffer();
-    updateShadowConstantBuffer();
+    clock_t start, end;
 
-    qDebug("shadowCam.pos = (%f, %f, %f)", shadowCam.pos.x(), shadowCam.pos.y(), shadowCam.pos.z());
-    qDebug("shadowCam.fov = (%f)", shadowCam.vfov);
-    //Matrix4f worldToCamera = cam.getWorldToCamera();
-    //Matrix4f projection = cam.getProjection();
-    //M = Matrix4f::Identity();
-    //V = worldToCamera;
-    //P = projection;
-    //MVP = projection * worldToCamera;
+    start = clock();
+    updateShadowConstantBuffer();
+    updateConstantBuffer();
+
+    r->renderSingleFrame(frontBuffer);
+	label.setPixmap(QPixmap::fromImage(img));
+	end = clock();
+    qDebug() << CLOCKS_PER_SEC / double(end - start) << " FPS";
+    qDebug() << double(end - start) / CLOCKS_PER_SEC  << " s";
+    return;
 
     auto& attrib = reader.GetAttrib();
     auto& shapes = reader.GetShapes();
     auto& materials = reader.GetMaterials();
 
 
-    clock_t start, end;
 
 	clear();
 
     //uchar* backBuffer = new uchar[bufferSize];
     //memset(backBuffer, 0, bufferSize);
 
-    start = clock();
     //for (int k = 0; k < 1000; ++k) {
 
     // On CPU and simple scene, earlyZ may slow down render speed
@@ -553,7 +546,9 @@ void SoftRasterizer::paintEvent(QPaintEvent*)
 
     renderShadowMap();
 
-    //render();
+    render();
+
+
 
 	end = clock();
 	label.setPixmap(QPixmap::fromImage(img));
@@ -593,7 +588,8 @@ void SoftRasterizer::keyPressEvent(QKeyEvent* e)
         break;
     case Qt::Key_Space:
 		resetCamera();
-		resetShadowCamera();
+        resetModelMatrix();
+		//resetShadowCamera();
 		break;
     }
     offset *= step;
@@ -601,11 +597,9 @@ void SoftRasterizer::keyPressEvent(QKeyEvent* e)
     cam.setTarget(cam.target + offset);
 	cam.updateTransform();
 
-    shadowCam.setPosition(shadowCam.pos + offset);
-    shadowCam.setTarget(shadowCam.target + offset);
-    shadowCam.updateTransform();
-
-    assert(cam.pos == shadowCam.pos);
+    //shadowCam.setPosition(shadowCam.pos + offset);
+    //shadowCam.setTarget(shadowCam.target + offset);
+    //shadowCam.updateTransform();
 }
 
 void SoftRasterizer::mousePressEvent(QMouseEvent* e)
@@ -623,15 +617,31 @@ void SoftRasterizer::mouseMoveEvent(QMouseEvent* e)
     Vector2f rotationRadians = rotation * M_PI;
 
     Vector3f rotationAxis(offset.y(), offset.x(), 0);
+    rotationAxis.normalize();
 
-    cam.rotate(rotationAxis, rotationRadian);
-    //cam.rotateAroundY(rotationRadians.x());
-    //cam.rotateAroundX(rotationRadians.y());
-    cam.updateTransform();
+    // rotate camera
+    if (e->buttons() & Qt::LeftButton) {
+		cam.rotate(rotationAxis, -rotationRadian);
+		//cam.rotateAroundY(rotationRadians.x());
+		//cam.rotateAroundX(rotationRadians.y());
+		cam.updateTransform();
 
-    shadowCam.rotate(rotationAxis, rotationRadian);
-    shadowCam.updateTransform();
+		Vector3f viewDir = cam.target - cam.pos;
+		qDebug("viewDir = (%f, %f, %f)", viewDir.x(), viewDir.y(), viewDir.z());
+		//shadowCam.rotate(rotationAxis, rotationRadian);
+		//shadowCam.updateTransform();
+        qDebug("leftButton");
+    }
+    // rotate object
+    else if (e->buttons() & Qt::RightButton) {
+        Eigen::AngleAxisf rotationVector(-rotationRadian, rotationAxis);
+        Matrix3f rotationMatrix = rotationVector.matrix();
+        modelMatrix.topLeftCorner(3, 3) = rotationMatrix * modelMatrix.topLeftCorner(3, 3);
+        qDebug("rightButton");
+    }
 
+	qDebug("not left, not right button");
+	qDebug() << e->button();
     lastFrameMousePos = currFrameMousePos;
 }
 
@@ -647,51 +657,51 @@ void SoftRasterizer::wheelEvent(QWheelEvent* e)
     cam.setVFov(fov);
     cam.updateProjection();
 
-    shadowCam.setVFov(fov);
-    shadowCam.updateProjection();
+    //shadowCam.setVFov(fov);
+    //shadowCam.updateProjection();
 }
 
-void SoftRasterizer::testEigen()
-{
-    MatrixXd m(2, 2);
-    m(0, 0) = 3;
-    m(1, 0) = 2.5;
-    m(0, 1) = -1;
-    m(1, 1) = m(1, 0) + m(0, 1);
-    qDebug() << m(0, 0) << m(1, 0) << m(0, 1) << m(1, 1);
-}
 
 void SoftRasterizer::resetCamera()
 {
-    cam.setPosition(Vector3f(0, 0, -1.0));
+    cam.setPosition(Vector3f(0, 0, -4.0));
     cam.setTarget(Vector3f(0, 0, 0));
     cam.setUp(Vector3f(0, 1, 0));
 
     cam.setVFov(90);
     cam.setRatio(float(imageWidth) / float(imageHeight));
     cam.setNear(0.1);
-    cam.setFar(50);
+    cam.setFar(1000);
+}
+
+void SoftRasterizer::resetModelMatrix()
+{
+    modelMatrix = Matrix4f::Identity();
 }
 
 void SoftRasterizer::resetShadowCamera()
 {
-    //shadowCam.setPosition(mainLight.position);
-    //shadowCam.setTarget(mainLight.position - mainLight.direction);
-    //shadowCam.setUp(Vector3f(0, 0, 1));
+    shadowCam.setPosition(mainLight.position);
+    shadowCam.setTarget(mainLight.position - mainLight.direction);
+    shadowCam.setUp(Vector3f(0, 0, 1));
+
+    shadowCam.setLeft(-2);
+    shadowCam.setRight(2);
+    shadowCam.setBottom(-2);
+    shadowCam.setTop(2);
+    //shadowCam.setVFov(160);
+    //shadowCam.setRatio(1);
+    shadowCam.setNear(0.1);
+    shadowCam.setFar(50);
+
+    //shadowCam.setPosition(Vector3f(0, 0, -1.0));
+    //shadowCam.setTarget(Vector3f(0, 0, 0));
+    //shadowCam.setUp(Vector3f(0, 1, 0));
 
     //shadowCam.setVFov(90);
     //shadowCam.setRatio(1);
     //shadowCam.setNear(0.1);
     //shadowCam.setFar(50);
-
-    shadowCam.setPosition(Vector3f(0, 0, -1.0));
-    shadowCam.setTarget(Vector3f(0, 0, 0));
-    shadowCam.setUp(Vector3f(0, 1, 0));
-
-    shadowCam.setVFov(90);
-    shadowCam.setRatio(1);
-    shadowCam.setNear(0.1);
-    shadowCam.setFar(50);
 }
 
 void SoftRasterizer::updateConstantBuffer()
@@ -700,28 +710,33 @@ void SoftRasterizer::updateConstantBuffer()
     cb.objectToWorld = modelMatrix;
     cb.worldToCamera = cam.getWorldToCamera();
     cb.projection = cam.getProjection();
+
+    cb.shadowView = shadowCb.worldToCamera;
+    cb.shadowProj = shadowCb.projection;
+    cb.shadowMap = shadowMaps[0].data();
 }
 
 void SoftRasterizer::updateShadowConstantBuffer()
 {
-    //shadowCb.cameraPosition = mainLight.position;
-    //shadowCb.objectToWorld = modelMatrix;
-    //shadowCb.worldToCamera = shadowCam.getWorldToCamera();
-    //shadowCb.projection = shadowCam.getProjection();
-    shadowCb.cameraPosition = shadowCam.pos;
+    shadowCb.cameraPosition = mainLight.position;
     shadowCb.objectToWorld = modelMatrix;
     shadowCb.worldToCamera = shadowCam.getWorldToCamera();
     shadowCb.projection = shadowCam.getProjection();
+
+    //shadowCb.cameraPosition = shadowCam.pos;
+    //shadowCb.objectToWorld = modelMatrix;
+    //shadowCb.worldToCamera = shadowCam.getWorldToCamera();
+    //shadowCb.projection = shadowCam.getProjection();
 }
 
-FragmentInput SoftRasterizer::barycentricInterpolation(const FragmentInput* vertices, Vector3f& baryCoord)
+FragmentInput SoftRasterizer::barycentricInterpolation(const FragmentInput* vertices, Vector3f& baryCoord, Vector3f& perspectiveBaryCoord)
 {
     FragmentInput output;
-    output.positionWS = baryCoord.x() * vertices[0].positionWS + baryCoord.y() * vertices[1].positionWS + baryCoord.z() * vertices[2].positionWS;
-    output.positionCS = baryCoord.x() * vertices[0].positionCS + baryCoord.y() * vertices[1].positionCS + baryCoord.z() * vertices[2].positionCS;
-    output.texCoord = baryCoord.x() * vertices[0].texCoord + baryCoord.y() * vertices[1].texCoord + baryCoord.z() * vertices[2].texCoord;
-    output.shadowCoord = baryCoord.x() * vertices[0].shadowCoord + baryCoord.y() * vertices[1].shadowCoord + baryCoord.z() * vertices[2].shadowCoord;
-    output.normalWS = baryCoord.x() * vertices[0].normalWS + baryCoord.y() * vertices[1].normalWS + baryCoord.z() * vertices[2].normalWS;
+    output.positionWS = perspectiveBaryCoord.x() * vertices[0].positionWS + perspectiveBaryCoord.y() * vertices[1].positionWS + perspectiveBaryCoord.z() * vertices[2].positionWS;
+    output.positionCS = perspectiveBaryCoord.x() * vertices[0].positionCS + perspectiveBaryCoord.y() * vertices[1].positionCS + perspectiveBaryCoord.z() * vertices[2].positionCS;
+    output.texCoord = perspectiveBaryCoord.x() * vertices[0].texCoord + perspectiveBaryCoord.y() * vertices[1].texCoord + perspectiveBaryCoord.z() * vertices[2].texCoord;
+    output.shadowCoord = perspectiveBaryCoord.x() * vertices[0].shadowCoord + perspectiveBaryCoord.y() * vertices[1].shadowCoord + perspectiveBaryCoord.z() * vertices[2].shadowCoord;
+    output.normalWS = perspectiveBaryCoord.x() * vertices[0].normalWS + perspectiveBaryCoord.y() * vertices[1].normalWS + perspectiveBaryCoord.z() * vertices[2].normalWS;
     output.normalWS.normalize();
     return output;
 }
@@ -759,10 +774,26 @@ void SoftRasterizer::renderDepthMap()
 
 void SoftRasterizer::renderShadowMap()
 {
+
+    Vector4f a(-2, -1, -2, 1);
+    Vector4f b(2, -1, -2, 1);
+    Vector4f c(-2, -1, 2, 1);
+    Vector4f d(2, -1, 2, 1);
+    Vector3f n(0, 1, 0);
+    std::array<Vector3f, 3> normals{ n, n, n };
+
+    Triangle planeTri0(a, b, c);
+    Triangle planeTri1(c, b, d);
+    planeTri0.setNormals(normals);
+    planeTri1.setNormals(normals);
+    drawTriangleShadow(shadowMaps[0].data(), planeTri0);
+    drawTriangleShadow(shadowMaps[0].data(), planeTri1);
+
     auto& attrib = reader.GetAttrib();
     auto& shapes = reader.GetShapes();
     auto& materials = reader.GetMaterials();
 
+    //qDebug() << "shapes.size() = " << shapes.size();
     int counter = 0;
     // Loop over shapes
     for (size_t s = 0; s < shapes.size(); s++) {
@@ -786,20 +817,16 @@ void SoftRasterizer::renderShadowMap()
             counter += drawTriangleShadow(shadowMaps[0].data(), tri);
         }
     }
-    std::vector<uchar> temp(bufferSize);
-    //uchar* temp = new uchar[bufferSize];
-    for (int i = 0; i < shadowWidth; ++i) {
-        for (int j = 0; j < shadowWidth; ++j) {
-            int index = i + j * imageWidth;
-            int pixelIndex = i + j * shadowWidth;
-			temp[4 * index] = uchar(shadowMaps[0][pixelIndex] * 255.99f);
-            //qDebug("shadowMaps[0] = %f", shadows
-			temp[4 * index + 3] = 255;
-        }
-    }
-    memcpy(frontBuffer, temp.data(), bufferSize);
-    //memcpy(frontBuffer, temp, bufferSize);
-    //for (int i = 0; i < 1000; ++i) frontBuffer[i * 4] = 255;
+   // std::vector<uchar> temp(bufferSize);
+   // for (int i = 0; i < shadowWidth; ++i) {
+   //     for (int j = 0; j < shadowWidth; ++j) {
+   //         int index = i + j * imageWidth;
+   //         int pixelIndex = i + j * shadowWidth;
+			//temp[4 * index] = uchar(shadowMaps[0][pixelIndex] * 255.99f);
+			//temp[4 * index + 3] = 255;
+   //     }
+   // }
+   // memcpy(frontBuffer, temp.data(), bufferSize);
 }
 
 void SoftRasterizer::render()
@@ -809,7 +836,23 @@ void SoftRasterizer::render()
     auto& materials = reader.GetMaterials();
 
     uchar* backBuffer = new uchar[bufferSize];
-    memset(backBuffer, 0, bufferSize);
+    memset(backBuffer, 255, bufferSize);
+
+    Vector4f a(-2, -1, -2, 1);
+    Vector4f b(2, -1, -2, 1);
+    Vector4f c(-2, -1, 2, 1);
+    Vector4f d(2, -1, 2, 1);
+    Vector3f n(0, 1, 0);
+    std::array<Vector3f, 3> normals{n, n, n};
+
+    Triangle planeTri0(a, b, c);
+    Triangle planeTri1(c, b, d);
+    planeTri0.setNormals(normals);
+    planeTri1.setNormals(normals);
+    drawTriangle(backBuffer, planeTri0);
+    drawTriangle(backBuffer, planeTri1);
+
+
 
     int counter = 0;
     // Loop over shapes
@@ -866,6 +909,7 @@ void SoftRasterizer::render()
         }
     }
     qDebug() << "run fragment shader " << counter << " times";
+
     memcpy(frontBuffer, backBuffer, bufferSize);
     delete[] backBuffer;
 }

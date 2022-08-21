@@ -1,17 +1,35 @@
 #include "Shader.h"
 
 
+float sampleShadowMap(const float* shadowMap, const Vector2f& uv, float depth)
+{
+	const int width = 1024;
+
+	int x = uv.x() * width;
+	int y = uv.y() * width;
+
+	if (x < 0 || x >= width || y < 0 || y >= width) {
+		return 1;
+	}
+
+	y = width - 1 - y;
+	float shadowDepth = shadowMap[x + y * width];
+
+	return depth+0.01 >= shadowDepth;
+	//return depth >= shadowDepth;
+}
+
 FragmentInput CommonVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input)
 {
 	FragmentInput output;
 	output.positionWS = cb.objectToWorld * input.positionOS;
-
-	//qDebug("input.positionSS = %f, %f, %f)", input.positionOS.x(), input.positionOS.y(), input.positionOS.z());
-	//qDebug("input.positionWS = %f, %f, %f)", output.positionWS.x(), output.positionWS.y(), output.positionWS.z());
-
 	// doesn't support affine transformation, so doesn't need inverse transpose matrix
 	output.normalWS = cb.objectToWorld.topLeftCorner(3, 3) * input.normalOS;
 	output.positionCS = cb.projection * cb.worldToCamera * output.positionWS;
+
+	Vector4f shadowCS = cb.shadowProj * cb.shadowView * output.positionWS;
+	output.shadowCoord.head(2) = (shadowCS.head(2) / shadowCS.w() * 0.5f) + Vector2f(0.5f, 0.5);
+	output.shadowCoord.tail(2) = shadowCS.tail(2);
 	return output;
 }
 
@@ -28,7 +46,9 @@ Vector3f BlinnPhongFragmentShader(const ConstantBuffer& cb, const ShaderProperti
 	NdotH = std::max(0.0f, NdotH);
 	NdotL = std::max(0.0f, NdotL);
 
-	Vector3f attenuatedLightColor = mainLight.color * (mainLight.distanceAttenuation * mainLight.shadowAttenuation) * NdotL;
+	float shadowAttenuation = sampleShadowMap(cb.shadowMap, input.shadowCoord.head(2), input.shadowCoord.z());
+	//Vector3f attenuatedLightColor = mainLight.color * (mainLight.distanceAttenuation * mainLight.shadowAttenuation) * NdotL;
+	Vector3f attenuatedLightColor = mainLight.color * (mainLight.distanceAttenuation * shadowAttenuation) * NdotL;
 
 	float smooth = std::pow(2.0f, sp.smoothness + 1);
 	Vector3f specularColor = std::pow(NdotH, smooth) * (attenuatedLightColor.array() * sp.specular.array()).matrix();
@@ -137,15 +157,20 @@ Vector3f UnityPBRFragmentShader(const ConstantBuffer& cb, const ShaderProperties
 	BRDFData brdfData;
 	InitializeBRDFData(brdfData, sp);
 
+	float shadowAttenuation = sampleShadowMap(cb.shadowMap, input.shadowCoord.head(2), input.shadowCoord.z());
+	//float shadowAttenuation = 1.0f;
+
+
 	float NdotL = saturate(input.normalWS.dot(cb.mainLight.direction));
-	Vector3f radiance = cb.mainLight.color * cb.mainLight.distanceAttenuation * cb.mainLight.shadowAttenuation * NdotL;
+	//Vector3f radiance = cb.mainLight.color * cb.mainLight.distanceAttenuation * cb.mainLight.shadowAttenuation * NdotL;
+	Vector3f radiance = cb.mainLight.color * cb.mainLight.distanceAttenuation * shadowAttenuation * NdotL;
 	Vector3f brdf = brdfData.diffuse;
 
 	Vector3f viewDir = (cb.cameraPosition - input.positionWS.head(3)).normalized();
 	brdf += brdfData.specular * DirectBRDFSpecular(brdfData, input.normalWS, cb.mainLight.direction, viewDir);
 
 
-	float temp = DirectBRDFSpecular(brdfData, input.normalWS, cb.mainLight.direction, viewDir);
+	//float temp = DirectBRDFSpecular(brdfData, input.normalWS, cb.mainLight.direction, viewDir);
 	//return brdfData.specular * temp;
 	//return brdf;
 	//return brdfData.specular;

@@ -13,6 +13,9 @@ struct ConstantBuffer
 	Matrix4f objectToWorld;
 	Matrix4f worldToCamera;
 	Matrix4f projection;
+	Matrix4f shadowView;
+	Matrix4f shadowProj;
+	float* shadowMap;
 };
 
 struct VertexInput {

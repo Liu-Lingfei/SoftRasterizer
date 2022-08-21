@@ -20,6 +20,7 @@ public:
 	//void setTexCoord(int ind, Vector2f uv);
 	Vector3f precomputeLineEquations(float x, float y) const;
 	bool pointInsideTriangleFast(float x, float y, const Vector3f& r, Vector3f& baryCoord) const;
+	bool pointInsideTriangle(float x, float y, Vector3f& baryCoord, Vector3f& pespectiveBary) const;
 	void updateInfo();
 
 	//w is reversed after vertex shader

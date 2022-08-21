@@ -99,10 +99,15 @@ void Camera::rotate(Vector3f axis, float radian)
 	Vector3f viewDir = target - pos;
 	axis.normalize();
 	Eigen::AngleAxisf rotationVector(radian, axis);
+
 	Matrix3f rotationMatrix = rotationVector.matrix();
-	Vector3f newViewDir = rotationMatrix * viewDir;
-	up = rotationMatrix * up;
+	worldToCamera.topLeftCorner(3, 3) = rotationMatrix * worldToCamera.topLeftCorner(3, 3);
+
+	//Vector3f newViewDir = rotationMatrix * viewDir;
+	//up = rotationMatrix * up;
+	Vector3f newViewDir = worldToCamera.block(2, 0, 1, 3).transpose();
 	target = pos + newViewDir;
+	up = worldToCamera.block(1, 0, 1, 3).transpose();
 }
 
 void Camera::rotateAroundX(float radian)
@@ -131,16 +136,25 @@ void Camera::rotateAroundY(float radian)
 
 void DirectionalLightShadowCamera::updateProjection()
 {
-	float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
-	float c = 1.0 / std::tan(halfRadianFov);
 
-	c = c / near;
+	//float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
+	//float c = 1.0 / std::tan(halfRadianFov);
+	//c = c / near;
+	//projection(0, 0) = c / ratio;
+	//projection(1, 1) = c;
 
-	projection(0, 0) = c / ratio;
-	projection(1, 1) = c;
-	//projection(2, 2) = 1 / (far - near);
-	//projection(2, 3) = -near / (far - near);
+	projection(0, 0) = 2.0f / (right - left);
+	projection(1, 1) = 2.0f / (top - bottom);
+
 	projection(2, 2) = -1 / (far - near);
 	projection(2, 3) = far / (far - near);
 	projection(3, 3) = 1;
+
+	//qDebug("(left, right) = (%f, %f)", left, right);
+	//qDebug("(bottom, top) = (%f, %f)", bottom, top);
+
+	MyTransform::print(projection);
+	//qDebug("t - b = %f", 2 / c);
+	//qDebug("r - l = %f", 2 / (c/ratio));
+	//qDebug("f - n = %f", (far - near));
 }

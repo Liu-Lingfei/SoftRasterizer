@@ -9,7 +9,7 @@ struct DirectionalLight
 	Vector3f position;
 	Vector3f direction;
 	Vector3f color;
-	float shadowAttenuation = 1.0f;
+	//float shadowAttenuation = 1.0f;
 	float distanceAttenuation = 1.0f;
 };
 

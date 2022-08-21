@@ -58,6 +58,19 @@ public:
 
 class DirectionalLightShadowCamera : public Camera {
 public:
+	DirectionalLightShadowCamera(const Vector3f& p = Vector3f::Zero(), const Vector3f& t = Vector3f::Zero(), const Vector3f& u = Vector3f::Zero())
+		:
+		Camera(p, t, u),
+		left(0),
+		right(0),
+		bottom(0),
+		top(0)
+	{}
+	float left, right, bottom, top;
+	void setLeft(float l) { left = l; }
+	void setRight(float r) { right = r; }
+	void setBottom(float b) { bottom = b; }
+	void setTop(float t) { top = t; }
 	void updateProjection();
 };
 

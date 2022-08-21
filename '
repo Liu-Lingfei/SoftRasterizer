@@ -1,0 +1,75 @@
+#ifndef RENDERER_H
+#define RENDREER_H
+
+#include "Eigen/Core"
+#include "tiny_obj_loader.h"
+#include "Light.h"
+#include "Material.h"
+#include "Input.h"
+#include "Camera.h"
+#include "Triangle.h"
+
+#include <functional>
+
+using namespace Eigen;
+
+class Renderer
+{
+public:
+	void renderSingleFrame(uchar* frontBuffer);
+    void setReader(const tinyobj::ObjReader* r) { reader = r; }
+    void setModelMatrix(const Matrix4f& m) { modelMatrix = m; }
+    void setMainLight(const DirectionalLight& l) { mainLight = l; }
+    void setMaterial(const Material& m) { material = m; }
+    void setConstantBuffer(const ConstantBuffer& buffer) { cb = buffer; }
+
+private:
+    //typedef std::function<void(void* pixelIndex, float depth, const Material& mat, const FragmentInput* fi, const Vector3f& perspectiveBary)> PixelRenderer;
+    typedef void (Renderer::*PR) (float* , uchar* , float , const Material& , const FragmentInput* , const Vector3f&);
+    void renderBuffer(float* depthBuffer, uchar* colorBuffer, const Material& mat, PR pixelRenderer);
+    void renderDepthBuffer(float* buffer);
+    void renderShadowMap(float* buffer);
+    void renderColorBuffer(uchar* buffer);
+
+    int renderSingleTriangle(float* depthBuffer, uchar* colorBuffer, Triangle& tri, const Material& mat, PR pixelRenderer);
+    Vector4f screenMapping(Vector4f clipSpaceCoord) const;
+    FragmentInput barycentricInterpolation(const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord) const;
+
+    static void depthRenderer(float* depthIndex, uchar* colorIndex, float depth, const Material& mat, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
+    static void shadowRenderer(float* depthIndex, uchar* colorIndex, float depth, const Material& mat, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
+    static void colorRenderer(float* depthIndex, uchar* colorIndex, float depth, const Material& mat, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
+	//PixelRenderer depthPixelRenderer = std::bind(&depthRenderer, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5);
+	//PixelRenderer shadowPixelRenderer = std::bind(&shadowRenderer, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5);
+	//PixelRenderer ColorPixelRenderer = std::bind(&colorRenderer, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5);
+
+    bool enableEarlyZ = false;
+    bool enableShadow = false;
+    const int screenWidth = 1920;
+    const int screenHeight = 1080;
+    const int shadowWidth = 1024;
+    int pixelSize;
+    Vector4f clearColor;
+
+	const tinyobj::ObjReader* reader = nullptr;
+	Matrix4f modelMatrix;
+
+    Camera cam;
+    DirectionalLight mainLight;
+    Material material;
+    ConstantBuffer cb;
+
+    std::vector<uchar> clearBuffer;
+    //std::vector<uchar> backBuffer;
+    //std::vector<float> depthBuffer;
+    //std::vector<std::vector<float>> shadowMaps;
+
+    QPoint lastFrameMousePos;
+    clock_t lastFrameTime;
+    float deltaTime;
+
+    ConstantBuffer shadowCb;
+    Material shadowMaterial;
+    DirectionalLightShadowCamera shadowCam;
+};
+
+#endif // !RENDERER_H

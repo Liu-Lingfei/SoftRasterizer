@@ -99,6 +99,51 @@ bool Triangle::pointInsideTriangleFast(float x, float y, const Vector3f& r, Vect
     if (r2 == 0 && (isTopEdge[2] || isLeftEdge[2])) return true;
 }
 
+bool Triangle::pointInsideTriangle(float x, float y, Vector3f& baryCoord, Vector3f& perspectiveBary) const
+{
+    Vector3f p(x, y, 1);
+    float r0 = computeLineEquation(p, 0);
+    float r1 = computeLineEquation(p, 1);
+    float r2 = computeLineEquation(p, 2);
+
+    if (r0 < 0 || r1 < 0 || r2 < 0) return false;
+
+    float sum = r0 + r1 + r2;
+    float reversedSum = 1.0f / sum;
+
+    baryCoord(0) = r0 * reversedSum;
+    baryCoord(1) = r1 * reversedSum;
+    baryCoord(2) = r2 * reversedSum;
+
+    float e0 = r0 * v[0].w();
+    float e1 = r1 * v[1].w();
+    float e2 = r2 * v[2].w();
+    //e0 = std::abs(e0);
+    //e1 = std::abs(e1);
+    //e2 = std::abs(e2);
+    sum = e0 + e1 + e2;
+
+    reversedSum = 1.0f / sum;
+
+    //if (e0 < 0 || e1 < 0 || e2 < 0) return false;
+
+    //if (e0 < 0) {
+    //    qDebug("v[0].w() = %f, v[1].w() = %f, v[2].w() = %f", v[0].w(), v[1].w(), v[2].w());
+    //    qDebug("e0 = %f, e1 = %f, e2 = %f", e0, e1, e2);
+    //}
+
+
+    perspectiveBary(0) = e0 * reversedSum;
+    perspectiveBary(1) = e1 * reversedSum;
+    perspectiveBary(2) = e2 * reversedSum;
+
+    if (r0 > 0 && r1 > 0 && r2 > 0) return true;
+
+    if (r0 == 0 && (isTopEdge[0] || isLeftEdge[0])) return true;
+    if (r1 == 0 && (isTopEdge[1] || isLeftEdge[1])) return true;
+    if (r2 == 0 && (isTopEdge[2] || isLeftEdge[2])) return true;
+}
+
 void Triangle::updateInfo()
 {
     computeCoeffs();
