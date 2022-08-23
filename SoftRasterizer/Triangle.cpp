@@ -176,7 +176,7 @@ void Triangle::computeCoeffs()
     }
 }
 
-inline float Triangle::computeLineEquation(const Vector3f& p, int index) const
+float Triangle::computeLineEquation(const Vector3f& p, int index) const
 {
     return edgeCoeffs[index].dot(p);
 }

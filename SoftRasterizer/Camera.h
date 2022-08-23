@@ -1,35 +1,101 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
-#include "Transform.h"
-#include "Eigen/Geometry"
-#include "MathDefines.h"
+#include "Eigen/Core"
+#include "FastRenderer.h"
+
 using namespace Eigen;
+
+class FastRenderer;
+struct ConstantBuffer;
+//typedef unsigned char uchar;
 
 class Camera
 {
 public:
-	Camera(const Vector3f& p=Vector3f::Zero(), const Vector3f& t = Vector3f::Zero(), const Vector3f& u =Vector3f::Zero())
-		:
+	//Camera(int type = 0, const Vector3f& p = Vector3f::Zero(), const Vector3f& t = Vector3f::Zero(), const Vector3f& u = Vector3f::Zero());
+
+	Camera(int type=0, const Vector3f& p=Vector3f::Zero(), const Vector3f& t=Vector3f::Zero(), const Vector3f& u=Vector3f::Zero()) :
+		type(type),
 		pos(p), target(t), up(u),
+		near(0), far(0),
+		left(0), right(0), bottom(0), top(0),
+		vfov(0), ratio(0),
 		x(Vector3f::Zero()), y(Vector3f::Zero()), z(Vector3f::Zero()),
-		vfov(0), ratio(0), near(0), far(0),
 		worldToCamera(Matrix4f::Identity()),
 		cameraToWorld(Matrix4f::Identity()),
-		projection(Matrix4f::Zero())
+		projection(Matrix4f::Zero()),
+		renderer(nullptr)
+		//shadowMap(nullptr),
+		//depthBuffer(nullptr),
+		//colorBuffer(nullptr),
+		//constantBuffer(nullptr)
 	{}
+
+	void renderColorBuffer();
+	void renderDepthBuffer();
+
+	int getWidth();
+	int getHeight();
+
+	float* getDepthBuffer();
+	float* getShadowMap();
+	uchar* getColorBuffer();
 
 	void setPosition(const Vector3f& p);
 	void setTarget(const Vector3f& t);
 	void setUp(const Vector3f& u);
 
-	void setVFov(float f);
-	void setRatio(float r);
-	void setNear(float n);
-	void setFar(float f);
+	void createRenderer();
+	void disposeRenderer();
+
+	//void bindRenderer(FastRenderer* r);
+
+	void bindShadowMap(float* sm, int width);
+	void disposeShadowMap();
+
+	void bindDepthBuffer(float* db, int width, int height);
+	void disposeDepthBuffer();
+
+	void bindColorBuffer(uchar* cb, int width, int height);
+	void disposeColorBuffer();
+
+	//void bindConstantBuffer(ConstantBuffer* cb);
+	void bindConstantBuffer(const ConstantBuffer& cb);
+	void disposeConstantBuffer();
+
+	void bindReader(const tinyobj::ObjReader* r);
+	void disposeReader();
+
+	void bindData(
+		const std::vector<Vector3i>* triangles,
+		const std::vector<Vector3f>* vertices,
+		const std::vector<Vector3f>* normals,
+		const std::vector<Vector2f>* texCoords,
+		const std::vector<Vector3f>* colors,
+		const std::vector<Triangle>* completeTris
+	);
+	void disposeData();
+
+	void setSize(int width, int height);
 
 	void updateTransform();
 	void updateProjection();
+	void updatePerspectiveProjection();
+	void updateOrthographicProjection();
+
+	void setNear(float n);
+	void setFar(float f);
+
+	void setVFov(float f);;
+	void setRatio(float r);;
+
+	void setLeft(float l);
+	void setRight(float r);
+	void setBottom(float b);
+	void setTop(float t);
+
+	int type;
 	Matrix4f getWorldToCamera() const;
 	Matrix4f getCameraToWorld() const;
 	Matrix4f getProjection() const;
@@ -44,34 +110,32 @@ public:
 
 	Vector3f x, y, z;
 
+	float near;
+	float far;
+
+	// for perspective camera
+
 	// in degrees, not radians
 	float vfov;
 	// screenWidth/screenHeight
 	float ratio;
-	float near;
-	float far;
+
+	// for orthographic camera
+
+	float left, right, bottom, top;
+
 
 	Matrix4f worldToCamera;
 	Matrix4f cameraToWorld;
 	Matrix4f projection;
-};
 
-class DirectionalLightShadowCamera : public Camera {
-public:
-	DirectionalLightShadowCamera(const Vector3f& p = Vector3f::Zero(), const Vector3f& t = Vector3f::Zero(), const Vector3f& u = Vector3f::Zero())
-		:
-		Camera(p, t, u),
-		left(0),
-		right(0),
-		bottom(0),
-		top(0)
-	{}
-	float left, right, bottom, top;
-	void setLeft(float l) { left = l; }
-	void setRight(float r) { right = r; }
-	void setBottom(float b) { bottom = b; }
-	void setTop(float t) { top = t; }
-	void updateProjection();
+	FastRenderer* renderer;
+
+	//float* shadowMap;
+	//float* depthBuffer;
+	//uchar* colorBuffer;
+	//ConstantBuffer* constantBuffer;
+	//const tinyobj::ObjReader* reader = nullptr;
 };
 
 #endif // !CAMERA_H

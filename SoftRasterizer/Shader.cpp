@@ -1,22 +1,186 @@
 #include "Shader.h"
 
+Vector2f poissonDisk[100];
+bool enableSoftShadow = false;
+int numSamples = 5;
+int numRings = 5;
+int filterSize = 5;
+int shadowMapWidth = 1024;
 
-float sampleShadowMap(const float* shadowMap, const Vector2f& uv, float depth)
+void setSoftShadow(bool enable) {
+	enableSoftShadow = enable;
+}
+
+void setNumSamples(int n) {
+	numSamples = n;
+}
+
+void setNumRings(int n) {
+	numRings = n;
+}
+
+void setFilterSizse(int n) {
+	filterSize = n;
+}
+
+void setShadowMapWidth(int w) {
+	shadowMapWidth = w;
+}
+
+template<typename T>
+T lerp(const T& a, const T& b, float s) {
+	return (1.0 - s) * a + s * b;
+}
+
+float saturate(float a) {
+	return std::min(std::max(0.0f, a), 1.0f);
+}
+
+float mod(float a, float b) {
+	return a - b * std::floor(a / b);
+}
+
+float fract(float a) {
+	return a - std::floor(a);
+}
+
+float rand_1to1(float x) {
+	// -1 -1
+	return fract(sin(x) * 10000.0);
+}
+
+float rand_2to1(const Vector2f& uv) {
+	// 0 - 1
+	const float a = 12.9898, b = 78.233, c = 43758.5453;
+	//float dt = dot( uv.xy, vec2( a,b ) ), sn = mod( dt, PI );
+	float dt = uv.dot(Vector2f(a, b));
+	float sn = mod(dt, M_PI);
+	return fract(std::sin(sn) * c);
+}
+
+void uniformDiskSamples(const Vector2f& randomSeed) {
+
+	float randNum = rand_2to1(randomSeed);
+	float sampleX = rand_1to1(randNum);
+	float sampleY = rand_1to1(sampleX);
+
+	float angle = sampleX * M_2_PI;
+	float radius = sqrt(sampleY);
+
+	//for (int i = 0; i < NUM_SAMPLES; i++) {
+	for (int i = 0; i < numSamples; i++) {
+		poissonDisk[i] = Vector2f(radius * std::cos(angle), radius * std::sin(angle));
+
+		sampleX = rand_1to1(sampleY);
+		sampleY = rand_1to1(sampleX);
+
+		angle = sampleX * M_2_PI;
+		radius = std::sqrt(sampleY);
+	}
+}
+
+void poissonDiskSamples(const Vector2f& randomSeed)
 {
-	const int width = 1024;
+	//float ANGLE_STEP = M_2_PI * float(NUM_RINGS) / float(NUM_SAMPLES);
+	//float INV_NUM_SAMPLES = 1.0 / float(NUM_SAMPLES);
+	float ANGLE_STEP = M_2_PI * float(numRings) / float(numSamples);
+	float INV_NUM_SAMPLES = 1.0 / float(numSamples);
 
-	int x = uv.x() * width;
-	int y = uv.y() * width;
+	float angle = rand_2to1(randomSeed) * M_2_PI;
 
-	if (x < 0 || x >= width || y < 0 || y >= width) {
+	float radius = INV_NUM_SAMPLES;
+	float radiusStep = radius;
+
+	//for (int i = 0; i < NUM_SAMPLES; i++) {
+	for (int i = 0; i < numSamples; i++) {
+		poissonDisk[i] = Vector2f(cos(angle), sin(angle)) * pow(radius, 0.75);
+		radius += radiusStep;
+		angle += ANGLE_STEP;
+	}
+}
+
+float findBlocker(float* shadowMap, const Vector2f& uv, float zReceiver) {
+
+	//const int shadowMapWidth = 1024;
+	int count = 0;
+	float blockerDepth = 0.0;
+	//for (int i = 0; i < NUM_SAMPLES; ++i) {
+	for (int i = 0; i < numSamples; ++i) {
+		//vec4 rgbaDepth = texture2D(shadowMap, uv + poissonDisk[i] * 0.005);
+		//float depth = unpack(rgbaDepth);
+		int index = uv.x() + (shadowMapWidth - 1 - uv.y()) * shadowMapWidth;
+		float depth = shadowMap[index];
+		//if (depth < EPS) depth = 1.0;
+		if (zReceiver > depth + 0.005) {
+			blockerDepth += depth;
+			count++;
+		}
+	}
+	return blockerDepth / float(count);
+}
+
+float PCF(const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth)
+{
+	//const int shadowMapWidth = 1024;
+	//Vector2f seed(rand() / double(RAND_MAX), rand() / double(RAND_MAX));
+	//poissonDiskSamples(poissonDisk, seed, 10, numSamples);
+	//for (int i = 0; i < numSamples; ++i) {
+	//	qDebug("poissonDisk[%d] = (%f, %f)", i, poissonDisk[i].x(), poissonDisk[i].y());
+	//}
+	int count = 0;
+	for (int i = 0; i < numSamples; ++i) {
+
+		//Vector2f sampleUV = uv + poissonDisk[i]*filterSize;
+		//Vector2f sampleUV = uv;
+		int x = uv.x() * shadowMapWidth;
+		int y = uv.y() * shadowMapWidth;
+		x += poissonDisk[i].x() * filterSize;
+		y += poissonDisk[i].y() * filterSize;
+		x = std::max(0, x);
+		x = std::min(shadowMapWidth - 1, x);
+		y = std::max(0, y);
+		y = std::min(shadowMapWidth - 1, y);
+
+		int index = x + (shadowMapWidth - 1 - y) * shadowMapWidth;
+		float sampledDepth = shadowMap[index];
+		if (depth >= sampledDepth) ++count;
+		//for (int i = 0; i < numSamples; ++i) {
+		//	qDebug("(x, y) = (%f, %f)", x, y);
+		//	qDebug("depth = %f, sampledDepth = %f", depth, sampledDepth);
+		//}
+	}
+	//qDebug("count = %d, numSamples = %d", count, numSamples);
+	return float(count) / float(numSamples);
+}
+
+float sampleShadowMap(const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth, float NdotL)
+{
+	//const int shadowMapWidth = 1024;
+
+	int x = uv.x() * shadowMapWidth;
+	int y = uv.y() * shadowMapWidth;
+
+	if (x < 0 || x >= shadowMapWidth || y < 0 || y >= shadowMapWidth) {
 		return 1;
 	}
 
-	y = width - 1 - y;
-	float shadowDepth = shadowMap[x + y * width];
+	y = shadowMapWidth - 1 - y;
 
-	return depth+0.01 >= shadowDepth;
-	//return depth >= shadowDepth;
+
+	float bias = std::max(0.001f, 1.0f / 512 * (1.0f - NdotL));
+
+
+	return PCF(shadowMap, shadowWidth, uv, depth + bias);
+	float shadowDepth = shadowMap[x + y * shadowMapWidth];
+	return depth + bias >= shadowDepth;
+
+	if (enableSoftShadow) {
+		return PCF(shadowMap, shadowWidth, uv, depth + bias);
+	}
+	else {
+		float shadowDepth = shadowMap[x + y * shadowMapWidth];
+		return depth + bias >= shadowDepth;
+	}
 }
 
 FragmentInput CommonVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input)
@@ -25,9 +189,14 @@ FragmentInput CommonVertexShader(const ConstantBuffer& cb, const ShaderPropertie
 	output.positionWS = cb.objectToWorld * input.positionOS;
 	// doesn't support affine transformation, so doesn't need inverse transpose matrix
 	output.normalWS = cb.objectToWorld.topLeftCorner(3, 3) * input.normalOS;
+
+	//if (output.normalWS.x() == 0 && output.normalWS.y() == 0 && output.normalWS.z() == 0) {
+		//qDebug("input.normalOS = (%f, %f, %f)", input.normalOS.x(), input.normalOS.y(), input.normalOS.z());
+		//MyTransform::print(cb.objectToWorld.topLeftCorner(3, 3));
+	//}
 	output.positionCS = cb.projection * cb.worldToCamera * output.positionWS;
 
-	Vector4f shadowCS = cb.shadowProj * cb.shadowView * output.positionWS;
+	Vector4f shadowCS = cb.lightShadowProjMatrix * cb.lightShadowViewMatrix * output.positionWS;
 	output.shadowCoord.head(2) = (shadowCS.head(2) / shadowCS.w() * 0.5f) + Vector2f(0.5f, 0.5);
 	output.shadowCoord.tail(2) = shadowCS.tail(2);
 	return output;
@@ -36,8 +205,7 @@ FragmentInput CommonVertexShader(const ConstantBuffer& cb, const ShaderPropertie
 Vector3f BlinnPhongFragmentShader(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput& input)
 {
 	//return Vector3f();
-	const DirectionalLight& mainLight = cb.mainLight;
-	Vector3f lightDir = mainLight.direction.normalized();
+	Vector3f lightDir = cb.lightDir.normalized();
 	Vector3f viewDir = (cb.cameraPosition - input.positionWS.head(3)).normalized();
 
 	Vector3f H = (lightDir + viewDir).normalized();
@@ -46,9 +214,10 @@ Vector3f BlinnPhongFragmentShader(const ConstantBuffer& cb, const ShaderProperti
 	NdotH = std::max(0.0f, NdotH);
 	NdotL = std::max(0.0f, NdotL);
 
-	float shadowAttenuation = sampleShadowMap(cb.shadowMap, input.shadowCoord.head(2), input.shadowCoord.z());
+	float shadowAttenuation = sampleShadowMap(cb.lightShadowMap, cb.lightShadowWidth, input.shadowCoord.head(2), input.shadowCoord.z(), NdotL);
+	float distanceAttenuation = 1.0f;
 	//Vector3f attenuatedLightColor = mainLight.color * (mainLight.distanceAttenuation * mainLight.shadowAttenuation) * NdotL;
-	Vector3f attenuatedLightColor = mainLight.color * (mainLight.distanceAttenuation * shadowAttenuation) * NdotL;
+	Vector3f attenuatedLightColor = cb.lightCol * (distanceAttenuation * shadowAttenuation) * NdotL;
 
 	float smooth = std::pow(2.0f, sp.smoothness + 1);
 	Vector3f specularColor = std::pow(NdotH, smooth) * (attenuatedLightColor.array() * sp.specular.array()).matrix();
@@ -67,15 +236,6 @@ Vector3f BlinnPhongFragmentShader(const ConstantBuffer& cb, const ShaderProperti
 	//return color;
 }
 
-
-template<typename T>
-T lerp(const T& a, const T& b, float s) {
-	return (1.0 - s) * a + s * b;
-}
-
-float saturate(float a) {
-	return std::min(std::max(0.0f, a), 1.0f);
-}
 
 float PerceptualSmoothnessToPerceptualRoughness(float perceptualSmoothness)
 {
@@ -157,17 +317,20 @@ Vector3f UnityPBRFragmentShader(const ConstantBuffer& cb, const ShaderProperties
 	BRDFData brdfData;
 	InitializeBRDFData(brdfData, sp);
 
-	float shadowAttenuation = sampleShadowMap(cb.shadowMap, input.shadowCoord.head(2), input.shadowCoord.z());
+	float NdotL = saturate(input.normalWS.dot(cb.lightDir));
+	//float NdotL = input.normalWS.dot(cb.mainLight.direction);
+
+	float shadowAttenuation = sampleShadowMap(cb.lightShadowMap, cb.lightShadowWidth, input.shadowCoord.head(2), input.shadowCoord.z(), NdotL);
 	//float shadowAttenuation = 1.0f;
 
 
-	float NdotL = saturate(input.normalWS.dot(cb.mainLight.direction));
 	//Vector3f radiance = cb.mainLight.color * cb.mainLight.distanceAttenuation * cb.mainLight.shadowAttenuation * NdotL;
-	Vector3f radiance = cb.mainLight.color * cb.mainLight.distanceAttenuation * shadowAttenuation * NdotL;
+	float distanceAttenuation = 1.0f;
+	Vector3f radiance = cb.lightCol * distanceAttenuation * shadowAttenuation * NdotL;
 	Vector3f brdf = brdfData.diffuse;
 
 	Vector3f viewDir = (cb.cameraPosition - input.positionWS.head(3)).normalized();
-	brdf += brdfData.specular * DirectBRDFSpecular(brdfData, input.normalWS, cb.mainLight.direction, viewDir);
+	brdf += brdfData.specular * DirectBRDFSpecular(brdfData, input.normalWS, cb.lightDir, viewDir);
 
 
 	//float temp = DirectBRDFSpecular(brdfData, input.normalWS, cb.mainLight.direction, viewDir);
@@ -182,6 +345,7 @@ FragmentInput ShadowMapVertexShader(const ConstantBuffer& cb, const ShaderProper
 	FragmentInput output;
 	output.positionWS = cb.objectToWorld * input.positionOS;
 	output.positionCS = cb.projection * cb.worldToCamera * output.positionWS;
+	output.normalWS = cb.objectToWorld.topLeftCorner(3, 3) * input.normalOS;
 	return output;
 }
 
@@ -189,5 +353,3 @@ Vector3f ShadowMapFragmentShader(const ConstantBuffer& cb, const ShaderPropertie
 {
 	return Vector3f(input.positionCS.z(), 0, 0);
 }
-
-

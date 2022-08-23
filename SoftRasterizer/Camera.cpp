@@ -1,5 +1,77 @@
 #include "Camera.h"
 
+//Camera::Camera(int type, const Vector3f& p, const Vector3f& t, const Vector3f& u)
+//	:
+//	type(type),
+//	pos(p), target(t), up(u),
+//	x(Vector3f::Zero()), y(Vector3f::Zero()), z(Vector3f::Zero()),
+//	near(0), far(0),
+//	worldToCamera(Matrix4f::Identity()),
+//	cameraToWorld(Matrix4f::Identity()),
+//	projection(Matrix4f::Zero()),
+//	renderer(nullptr),
+//	shadowMap(nullptr),
+//	depthBuffer(nullptr),
+//	colorBuffer(nullptr)
+//{
+//}
+
+
+//Camera::Camera(int type, const Vector3f& p, const Vector3f& t, const Vector3f& u)
+//	:
+//	type(type),
+//	pos(p), target(t), up(u),
+//	x(Vector3f::Zero()), y(Vector3f::Zero()), z(Vector3f::Zero()),
+//	near(0), far(0),
+//	worldToCamera(Matrix4f::Identity()),
+//	cameraToWorld(Matrix4f::Identity()),
+//	projection(Matrix4f::Zero()),
+//	renderer(nullptr),
+//	shadowMap(nullptr),
+//	depthBuffer(nullptr),
+//	colorBuffer(nullptr)
+//{
+//}
+
+//Camera::Camera(int type, const Vector3f& p, const Vector3f& t, const Vector3f& u)
+//{
+//}
+
+void Camera::renderColorBuffer()
+{
+	renderer->renderColorBuffer();
+}
+
+void Camera::renderDepthBuffer()
+{
+	renderer->renderDepthBuffer();
+}
+
+int Camera::getWidth()
+{
+	return renderer->screenWidth;
+}
+
+int Camera::getHeight()
+{
+	return renderer->screenHeight;
+}
+
+float* Camera::getDepthBuffer()
+{
+	return renderer->depthBuffer;
+}
+
+float* Camera::getShadowMap()
+{
+	return renderer->shadowMap;
+}
+
+uchar* Camera::getColorBuffer()
+{
+	return renderer->colorBuffer;
+}
+
 void Camera::setPosition(const Vector3f& p)
 {
 	pos = p;
@@ -15,69 +87,93 @@ void Camera::setUp(const Vector3f& u)
 	up = u;
 }
 
-void Camera::setVFov(float f)
+void Camera::createRenderer()
 {
-	vfov = f;
+	if (renderer) {
+		disposeRenderer();
+	}
+	renderer = new FastRenderer();
 }
 
-void Camera::setRatio(float r)
+void Camera::disposeRenderer()
 {
-	ratio = r;
+	delete renderer;
+	renderer = nullptr;
 }
 
-void Camera::setNear(float n)
+//void Camera::bindRenderer(FastRenderer* r) {
+	//renderer = r;
+//}
+
+void Camera::bindShadowMap(float* sm, int width)
 {
-	near = n;
+	renderer->bindShadowMap(sm, width);
 }
 
-void Camera::setFar(float f)
+void Camera::disposeShadowMap()
 {
-	far = f;
+	renderer->disposeShadowMap();
 }
 
-void Camera::updateTransform()
+void Camera::bindDepthBuffer(float* db, int width, int height)
 {
-	z = (target - pos).normalized();
-	x = (up.cross(z)).normalized();
-	y = z.cross(x);
-
-	worldToCamera(0, 0) = x.x();
-	worldToCamera(0, 1) = x.y();
-	worldToCamera(0, 2) = x.z();
-
-	worldToCamera(1, 0) = y.x();
-	worldToCamera(1, 1) = y.y();
-	worldToCamera(1, 2) = y.z();
-
-	worldToCamera(2, 0) = z.x();
-	worldToCamera(2, 1) = z.y();
-	worldToCamera(2, 2) = z.z();
-
-	worldToCamera(0, 3) = -x.dot(pos);
-	worldToCamera(1, 3) = -y.dot(pos);
-	worldToCamera(2, 3) = -z.dot(pos);
-
-
-	cameraToWorld.topLeftCorner(3, 3) = worldToCamera.topLeftCorner(3, 3).transpose();
-	cameraToWorld.topRightCorner(3, 1) = pos;
-
-	//Matrix4f temp = worldToCamera * cameraToWorld;
-	//MyTransform t;
-	//t.m = temp;
-	//t.print();
+	renderer->bindDepthBuffer(db, width, height);
 }
 
-void Camera::updateProjection()
+void Camera::disposeDepthBuffer()
 {
-	float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
-	float c = 1.0 / std::tan(halfRadianFov);
-
-	projection(0, 0) = c / ratio;
-	projection(1, 1) = c;
-	projection(2, 2) = -near / (far - near);
-	projection(2, 3) = near * far / (far - near);
-	projection(3, 2) = 1;
+	renderer->disposeDepthBuffer();
 }
+
+void Camera::bindColorBuffer(uchar* cb, int width, int height)
+{
+	renderer->bindColorBuffer(cb, width, height);
+}
+
+void Camera::disposeColorBuffer()
+{
+	renderer->disposeColorBuffer();
+}
+
+//void Camera::bindConstantBuffer(ConstantBuffer* cb) {
+void Camera::bindConstantBuffer(const ConstantBuffer& cb) {
+	renderer->bindConstantBuffer(cb);
+}
+
+void Camera::disposeConstantBuffer()
+{
+	renderer->disposeConstantBuffer();
+}
+
+void Camera::bindReader(const tinyobj::ObjReader* r)
+{
+	renderer->bindReader(r);
+}
+
+void Camera::disposeReader()
+{
+	renderer->disposeReader();
+}
+
+void Camera::bindData(
+	const std::vector<Vector3i>* triangles,
+	const std::vector<Vector3f>* vertices,
+	const std::vector<Vector3f>* normals,
+	const std::vector<Vector2f>* texCoords,
+	const std::vector<Vector3f>* colors,
+	const std::vector<Triangle>* completeTris
+)
+{
+	renderer->bindData(triangles, vertices, normals, texCoords, colors, completeTris);
+}
+
+void Camera::setSize(int width, int height)
+{
+	renderer->setSize(width, height);
+}
+
+
+
 
 Matrix4f Camera::getWorldToCamera() const
 {
@@ -134,9 +230,53 @@ void Camera::rotateAroundY(float radian)
 	target = pos + newViewDir;
 }
 
-void DirectionalLightShadowCamera::updateProjection()
+void Camera::updateTransform()
 {
+	z = (target - pos).normalized();
+	x = (up.cross(z)).normalized();
+	y = z.cross(x);
 
+	worldToCamera(0, 0) = x.x();
+	worldToCamera(0, 1) = x.y();
+	worldToCamera(0, 2) = x.z();
+
+	worldToCamera(1, 0) = y.x();
+	worldToCamera(1, 1) = y.y();
+	worldToCamera(1, 2) = y.z();
+
+	worldToCamera(2, 0) = z.x();
+	worldToCamera(2, 1) = z.y();
+	worldToCamera(2, 2) = z.z();
+
+	worldToCamera(0, 3) = -x.dot(pos);
+	worldToCamera(1, 3) = -y.dot(pos);
+	worldToCamera(2, 3) = -z.dot(pos);
+
+
+	cameraToWorld.topLeftCorner(3, 3) = worldToCamera.topLeftCorner(3, 3).transpose();
+	cameraToWorld.topRightCorner(3, 1) = pos;
+}
+
+void Camera::updateProjection() {
+	if (type == 0) updatePerspectiveProjection();
+	else if (type == 1) updateOrthographicProjection();
+	else return;
+}
+
+void Camera::updatePerspectiveProjection()
+{
+	float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
+	float c = 1.0 / std::tan(halfRadianFov);
+
+	projection(0, 0) = c / ratio;
+	projection(1, 1) = c;
+	projection(2, 2) = -near / (far - near);
+	projection(2, 3) = near * far / (far - near);
+	projection(3, 2) = 1;
+}
+
+void Camera::updateOrthographicProjection()
+{
 	//float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
 	//float c = 1.0 / std::tan(halfRadianFov);
 	//c = c / near;
@@ -153,8 +293,25 @@ void DirectionalLightShadowCamera::updateProjection()
 	//qDebug("(left, right) = (%f, %f)", left, right);
 	//qDebug("(bottom, top) = (%f, %f)", bottom, top);
 
-	MyTransform::print(projection);
+	//MyTransform::print(projection);
 	//qDebug("t - b = %f", 2 / c);
 	//qDebug("r - l = %f", 2 / (c/ratio));
 	//qDebug("f - n = %f", (far - near));
 }
+
+void Camera::setNear(float n) { near = n; }
+
+void Camera::setFar(float f) { far = f; }
+
+void Camera::setVFov(float f) { vfov = f; }
+
+void Camera::setRatio(float r) { ratio = r; }
+
+void Camera::setLeft(float l) { left = l; }
+
+void Camera::setRight(float r) { right = r; }
+
+void Camera::setBottom(float b) { bottom = b; }
+
+void Camera::setTop(float t) { top = t; }
+

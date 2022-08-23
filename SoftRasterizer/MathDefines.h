@@ -1,4 +1,5 @@
 #ifndef MATH_DEFINES_H
+#define MATH_DEFINES_H
 
 // Definitions of useful mathematical constants
 //

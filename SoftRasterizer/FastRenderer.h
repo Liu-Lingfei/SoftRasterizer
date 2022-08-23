@@ -1,88 +1,114 @@
 #ifndef FAST_RENDERER_H
-#define FAST_RENDREER_H
+#define FAST_RENDERER_H
 
-#include "Eigen/Core"
 #include "tiny_obj_loader.h"
-#include "Light.h"
-#include "Material.h"
-#include "Input.h"
-#include "Camera.h"
+#include "Eigen/Core"
+
 #include "Triangle.h"
+#include "Camera.h"
+#include "Transform.h"
+#include "ConstantBuffer.h"
+#include "Shader.h"
+
 
 #include <functional>
 #include <vector>
+#include <thread>
+
+#include <QtConcurrent/QtConcurrent>
+using namespace QtConcurrent;
+
 
 using namespace Eigen;
 
+struct ConstantBuffer;
+//struct VertexInput;
+//struct FragmentInput;
+class Camera;
+
 class FastRenderer
 {
+    friend class Camera;
 public:
-    FastRenderer(int width, int height, int shadowWidth, bool earlyZ = false, bool shadow = true)
-        :
-        screenWidth(width), screenHeight(height), shadowWidth(shadowWidth),
-        enableEarlyZ(earlyZ), enableShadow(shadow),
-        pixelSize(width* height),
-        db(width*height),
-        sm(shadowWidth * shadowWidth),
-        modelMatrix(nullptr),
-        deltaTime(0),
-        lastFrameTime(0)
-    {
-        float* db = new float[pixelSize];
-        float* sm = new float[shadowWidth * shadowWidth];
-    }
-    void renderSingleFrame(uchar* frontBuffer);
-    void setReader(const tinyobj::ObjReader* r) { reader = r; }
-    void setModelMatrix(const Matrix4f* m) { modelMatrix = m; }
-    void setCamera(const Camera* c) { cam = c; }
-    void setShadowCamera(const DirectionalLightShadowCamera* c) { shadowCam = c; }
-    void setMainLight(const DirectionalLight* l) { mainLight = l; }
-    void setMaterial(const Material* m) { material = m; }
-    void setShadowMaterial(const Material* m) { shadowMaterial = m; }
-    void setConstantBuffer(ConstantBuffer* buffer) { materialConstantBuffer = buffer; }
-    void setShadowConstantBuffer(const ConstantBuffer* buffer) { shadowConstantBuffer = buffer; }
+    FastRenderer();
+    void renderColorBuffer();
+    void renderDepthBuffer();
+    void clearColorBuffer();
+    void clearDepthBuffer();
+
+    //void bindAll(
+    //    int w, int h,
+    //    Camera* c,
+    //    const tinyobj::ObjReader* r,
+    //    uchar* colorBuffer, float* depthBuffer, float* shadowMap,
+    //    ConstantBuffer* constantBuffer
+    //);
+    void setSize(int w, int h);
+
+    void bindReader(const tinyobj::ObjReader* r);
+    void disposeReader();
+
+    void bindData(
+        const std::vector<Vector3i>* triangles,
+        const std::vector<Vector3f>* vertices,
+        const std::vector<Vector3f>* normals,
+        const std::vector<Vector2f>* texCoords,
+        const std::vector<Vector3f>* colors,
+        const std::vector<Triangle>* completeTris
+    );
+    void disposeData();
+
+
+    void bindColorBuffer(uchar* cb, int width, int height);
+    void disposeColorBuffer();
+
+    void bindDepthBuffer(float* db, int width, int height);
+    void disposeDepthBuffer();
+
+    void bindShadowMap(float* sm, int width);
+    void disposeShadowMap();
+
+    void bindConstantBuffer(const ConstantBuffer& buffer);
+    void disposeConstantBuffer();
 
 private:
-    typedef void (*PR)(float* depthIndex, uchar* colorIndex, float depth, const Material* mat, const ConstantBuffer* cb, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
-    void renderBuffer(int width, int height, float* depthBuffer, uchar* colorBuffer, const Material* mat, const ConstantBuffer* cb, PR pixelRenderer);
-    void renderShadowMap(int width, int height, float* depthBuffer, uchar* colorBuffer, const Material* mat, const ConstantBuffer* cb, PR pixelRenderer);
+    //typedef void (FastRenderer::*PR)(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
+    //void renderBuffer(PR pixelRenderer);
+    void renderBuffer(int renderType);
 
-    int renderSingleTriangle(int width, int height, float* depthBuffer, uchar* colorBuffer, Triangle& tri, const Material* mat, const ConstantBuffer* cb, PR pixelRenderer);
-    int renderSingleTriangleShadow(int width, int height, float* depthBuffer, uchar* colorBuffer, Triangle& tri, const Material* mat, const ConstantBuffer* cb, PR pixelRenderer);
+    int renderSingleTriangle(const Triangle& tri, int renderType, int triIndex);
     static Vector4f screenMapping(int width, int height, Vector4f clipSpaceCoord);
-    static FragmentInput barycentricInterpolation(const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord);
+    //static FragmentInput barycentricInterpolation(const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord);
+    static void barycentricInterpolation(FragmentInput& output, const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord);
 
-    static void depthRenderer(float* depthIndex, uchar* colorIndex, float depth, const Material* mat, const ConstantBuffer* cb, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
-    static void shadowRenderer(float* depthIndex, uchar* colorIndex, float depth, const Material* mat, const ConstantBuffer* cb, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
-    static void colorRenderer(float* depthIndex, uchar* colorIndex, float depth, const Material* mat, const ConstantBuffer* cb, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
+    void depthRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
+    void colorRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
 
-    const int screenWidth;
-    const int screenHeight;
-    const int shadowWidth;
+    int screenWidth;
+    int screenHeight;
+
     bool enableEarlyZ;
     bool enableShadow;
 
-    int pixelSize;
 
     const tinyobj::ObjReader* reader = nullptr;
-    const Matrix4f* modelMatrix;
 
-    const Camera* cam;
-    const DirectionalLight* mainLight;
-    const Material* material;
-    ConstantBuffer* materialConstantBuffer;
+    float* shadowMap;
+    float* depthBuffer;
+    uchar* colorBuffer;
 
-    std::vector<uchar> clearBuffer;
-    std::vector<float> db;
-    std::vector<float> sm;
+    ConstantBuffer constantBuffer;
 
     QPoint lastFrameMousePos;
     clock_t lastFrameTime;
     float deltaTime;
 
-    const ConstantBuffer* shadowConstantBuffer;
-    const Material* shadowMaterial;
-    const DirectionalLightShadowCamera* shadowCam;
+    const std::vector<Vector3i>* triangles;
+    const std::vector<Vector3f>* vertices;
+    const std::vector<Vector3f>* normals;
+    const std::vector<Vector2f>* texCoords;
+    const std::vector<Vector3f>* colors;
+    const std::vector<Triangle>* completeTris;
 };
 
 #endif // !FAST_RENDERER_H

@@ -11,9 +11,9 @@ public:
 	Triangle();
 	Triangle(const Vector4f& a, const Vector4f& b, const Vector4f c);
 
-	inline void setVertex(int ind, Vector4f ver);
-	inline void setNormal(int ind, Vector3f n);
-	inline void setColor(int ind, float r, float g, float b, float a);
+	void setVertex(int ind, Vector4f ver);
+	void setNormal(int ind, Vector3f n);
+	void setColor(int ind, float r, float g, float b, float a);
 
 	void setNormals(const std::array<Vector3f, 3>& normals);
 	void setColors(const std::array<Vector4f, 3>& colors);
@@ -37,7 +37,7 @@ public:
 
 private:
 	void computeCoeffs();
-	inline float computeLineEquation(const Vector3f& p, int index) const;
+	float computeLineEquation(const Vector3f& p, int index) const;
 	//inline bool isTopEdge(int index) const;
 	//inline bool isLeftEdge(int index) const;
 };

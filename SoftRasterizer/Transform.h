@@ -13,6 +13,7 @@ public:
 	static Matrix4f rotate(Vector3f axis, float radian);
 	static Matrix4f translate(Vector3f t);
 	static void print(const Matrix4f& m);
+	static void print(const Matrix3f& m);
 
 	static Vector4f transformPoint(const Matrix4f& m, const Vector4f& p);
 	static Vector4f transformVector(const Matrix4f& m, const Vector4f& p);
