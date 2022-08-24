@@ -60,9 +60,9 @@ public:
 	int getWidth();
 	int getHeight();
 
-	float* getDepthBuffer();
-	float* getShadowMap();
-	uchar* getColorBuffer();
+	const float* getDepthBuffer() const;
+	const float* getShadowMap() const;
+	const uchar* getColorBuffer() const;
 
 	void setPosition(const Vector3f& p);
 	void setTarget(const Vector3f& t);

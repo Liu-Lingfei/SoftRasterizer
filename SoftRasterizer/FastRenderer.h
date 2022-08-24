@@ -26,10 +26,22 @@ struct ConstantBuffer;
 //struct FragmentInput;
 class Camera;
 
-//struct FragmentInfo
-//{
-//
-//};
+struct FragmentInfo
+{
+    FragmentInfo(int p, float d, const FragmentInput* f, const Vector3f& b, const Vector3f& pb):
+        pixelIndex(p), depth(d), baryCoord(b), perspectiveBaryCoord(pb)
+    {
+        fi[0] = f[0];
+        fi[1] = f[1];
+        fi[2] = f[2];
+    }
+
+    int pixelIndex;
+    float depth;
+    FragmentInput fi[3];
+    Vector3f baryCoord;
+    Vector3f perspectiveBaryCoord;
+};
 
 class FastRenderer
 {
@@ -81,13 +93,15 @@ public:
     //void renderBuffer(PR pixelRenderer);
     void renderBuffer(int renderType);
 
-    int renderSingleTriangle(const Triangle& tri, int renderType, int triIndex);
+    int renderSingleTriangle(Triangle& tri, int renderType, int triIndex);
     static Vector4f screenMapping(int width, int height, Vector4f clipSpaceCoord);
     //static FragmentInput barycentricInterpolation(const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord);
     static void barycentricInterpolation(FragmentInput& output, const FragmentInput* vertices, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord);
 
     void depthRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord);
     void colorRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord);
+
+    void renderFragments(int renderType);
 
     int screenWidth;
     int screenHeight;
@@ -115,7 +129,7 @@ public:
     const std::vector<Vector3f>* colors;
     const std::vector<Triangle>* completeTris;
 
-    //std::vector<>
+    std::vector<FragmentInfo> fragments;
 };
 
 #endif // !FAST_RENDERER_H

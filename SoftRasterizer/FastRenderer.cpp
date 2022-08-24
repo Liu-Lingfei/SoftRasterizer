@@ -131,11 +131,13 @@ void FastRenderer::renderBuffer(int renderType)
     auto& materials = reader->GetMaterials();
 
 
-    float groundy = -0.736784;
-    Vector4f a(-2, groundy, -2, 1);
-    Vector4f b(2, groundy, -2, 1);
-    Vector4f c(-2, groundy, 2, 1);
-    Vector4f d(2, groundy, 2, 1);
+    //float groundy = -0.736784;
+    float groundy = -1;
+    float length = 3;
+    Vector4f a(-length, groundy, -length, 1);
+    Vector4f b(length, groundy, -length, 1);
+    Vector4f c(-length, groundy, length, 1);
+    Vector4f d(length, groundy, length, 1);
     Vector3f n(0, 1, 0);
     std::array<Vector3f, 3> planeNormal{ n, n, n };
 
@@ -144,8 +146,72 @@ void FastRenderer::renderBuffer(int renderType)
     planeTri0.setNormals(planeNormal);
     planeTri1.setNormals(planeNormal);
 
-    renderSingleTriangle(planeTri0, renderType, -2);
-    renderSingleTriangle(planeTri1, renderType, -1);
+    Vector3f originalColor = constantBuffer.material->shaderProps.albedo;
+    //if (renderType==1)
+		constantBuffer.material->shaderProps.albedo = Vector3f(0.5, 0.5, 1.0);
+	renderSingleTriangle(planeTri0, renderType, -2);
+	renderSingleTriangle(planeTri1, renderType, -1);
+    constantBuffer.material->shaderProps.albedo = originalColor;
+
+
+    int counter = 0;
+    // Loop over shapes
+    for (size_t s = 0; s < shapes.size(); s++) {
+        // Loop over faces(polygon)
+        //qDebug() << "shapes[s].mesh.num_face_vertices.size() = " << shapes[s].mesh.num_face_vertices.size();
+        size_t index_offset = 0;
+        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
+            size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+            Triangle tri;
+
+            // Loop over vertices in the face.
+            for (size_t v = 0; v < fv; v++) {
+                // access to vertex
+                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
+                tinyobj::real_t vx = attrib.vertices[3 * size_t(idx.vertex_index) + 0];
+                tinyobj::real_t vy = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
+                tinyobj::real_t vz = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
+
+                tri.v[v] = Vector4f(vx, vy, vz, 1.0);
+                //qDebug() << vx << ", " << vy << ", " << vz;
+
+                // Check if `normal_index` is zero or positive. negative = no normal data
+                if (idx.normal_index >= 0) {
+                    tinyobj::real_t nx = attrib.normals[3 * size_t(idx.normal_index) + 0];
+                    tinyobj::real_t ny = attrib.normals[3 * size_t(idx.normal_index) + 1];
+                    tinyobj::real_t nz = attrib.normals[3 * size_t(idx.normal_index) + 2];
+
+                    tri.normals[v] = Vector3f(nx, ny, nz).normalized();
+                }
+
+                // Check if `texcoord_index` is zero or positive. negative = no texcoord data
+                if (idx.texcoord_index >= 0) {
+                    tinyobj::real_t tx = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
+                    tinyobj::real_t ty = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+
+                    //qDebug() << tx << ", " << ty;
+                    tri.texCoords[v] = Vector2f(tx, ty);
+                }
+
+                // Optional: vertex colors
+                tinyobj::real_t red = attrib.colors[3 * size_t(idx.vertex_index) + 0];
+                tinyobj::real_t green = attrib.colors[3 * size_t(idx.vertex_index) + 1];
+                tinyobj::real_t blue = attrib.colors[3 * size_t(idx.vertex_index) + 2];
+
+                //qDebug() << red << ", " << green << ", " << blue;
+                tri.colors[v] = Vector4f(red, green, blue, 255);
+            }
+            index_offset += fv;
+
+            // per-face material
+            shapes[s].mesh.material_ids[f];
+
+            //counter += drawTriangle(backBuffer, tri);
+            renderSingleTriangle(tri, renderType, counter);
+            //counter += renderSingleTriangle(width, height, depthBuffer, colorBuffer, tri, mat, cb, pixelRenderer);
+            ++counter;
+        }
+    }
 
     //std::vector<std::thread> pool;
     //int numThreads = 8;
@@ -177,61 +243,67 @@ void FastRenderer::renderBuffer(int renderType)
     //    pool[i].join();
     //}
 
-    //if (renderType == 1) {
-    if (false) {
 
-        std::vector<QFuture<void>> qfs;
-        int numThreads = 6;
-        for (int k = 0; k < numThreads; ++k) {
-            //qDebug("k = %d", k);
-            qfs.push_back(
-                QtConcurrent::run(
-                    [=]() {
-                        for (int i = k; i < triangles->size(); i += numThreads) {
-                            //Vector3i indices = (*triangles)[i];
-                            //Triangle tri;
-                            //int x = indices.x();
-                            //int y = indices.y();
-                            //int z = indices.z();
+    //if (true) {
 
-                            //tri.v[0] = Vector4f((*vertices)[x].x(), (*vertices)[x].y(), (*vertices)[x].z(), 1);
-                            //tri.v[1] = Vector4f((*vertices)[y].x(), (*vertices)[y].y(), (*vertices)[y].z(), 1);
-                            //tri.v[2] = Vector4f((*vertices)[z].x(), (*vertices)[z].y(), (*vertices)[z].z(), 1);
+    //    std::vector<QFuture<void>> qfs;
+    //    int numThreads = 6;
+    //    for (int k = 0; k < numThreads; ++k) {
+    //        //qDebug("k = %d", k);
+    //        qfs.push_back(
+    //            QtConcurrent::run(
+    //                [=]() {
+    //                    for (int i = k; i < triangles->size(); i += numThreads) {
+    //                        //Vector3i indices = (*triangles)[i];
+    //                        //Triangle tri;
+    //                        //int x = indices.x();
+    //                        //int y = indices.y();
+    //                        //int z = indices.z();
 
-                            //tri.normals[0] = (*normals)[x];
-                            //tri.normals[1] = (*normals)[y];
-                            //tri.normals[2] = (*normals)[z];
+    //                        //tri.v[0] = Vector4f((*vertices)[x].x(), (*vertices)[x].y(), (*vertices)[x].z(), 1);
+    //                        //tri.v[1] = Vector4f((*vertices)[y].x(), (*vertices)[y].y(), (*vertices)[y].z(), 1);
+    //                        //tri.v[2] = Vector4f((*vertices)[z].x(), (*vertices)[z].y(), (*vertices)[z].z(), 1);
 
-                            //renderSingleTriangle(tri, renderType, i);
-                            renderSingleTriangle((*completeTris)[i], renderType, i);
-                        }
-                    }
-            ));
-        }
+    //                        //tri.normals[0] = (*normals)[x];
+    //                        //tri.normals[1] = (*normals)[y];
+    //                        //tri.normals[2] = (*normals)[z];
 
-        for (int i = 0; i < numThreads; ++i) {
-            qfs[i].waitForFinished();
-        }
-    }
-    else {
-        for (int i = 0; i < triangles->size(); ++i) {
-            Vector3i indices = (*triangles)[i];
-            Triangle tri;
-            int x = indices.x();
-            int y = indices.y();
-            int z = indices.z();
+    //                        //renderSingleTriangle(tri, renderType, i);
+    //                        renderSingleTriangle((*completeTris)[i], renderType, i);
+    //                    }
+    //                }
+    //        ));
+    //    }
 
-            tri.v[0] = Vector4f((*vertices)[x].x(), (*vertices)[x].y(), (*vertices)[x].z(), 1);
-            tri.v[1] = Vector4f((*vertices)[y].x(), (*vertices)[y].y(), (*vertices)[y].z(), 1);
-            tri.v[2] = Vector4f((*vertices)[z].x(), (*vertices)[z].y(), (*vertices)[z].z(), 1);
+    //    for (int i = 0; i < numThreads; ++i) {
+    //        qfs[i].waitForFinished();
+    //    }
+    //}
+    //else {
+    //    for (int i = 0; i < triangles->size(); ++i) {
+    //        Vector3i indices = (*triangles)[i];
+    //        Triangle tri;
+    //        int x = indices.x();
+    //        int y = indices.y();
+    //        int z = indices.z();
 
-            tri.normals[0] = (*normals)[x];
-            tri.normals[1] = (*normals)[y];
-            tri.normals[2] = (*normals)[z];
+    //        tri.v[0] = Vector4f((*vertices)[x].x(), (*vertices)[x].y(), (*vertices)[x].z(), 1);
+    //        tri.v[1] = Vector4f((*vertices)[y].x(), (*vertices)[y].y(), (*vertices)[y].z(), 1);
+    //        tri.v[2] = Vector4f((*vertices)[z].x(), (*vertices)[z].y(), (*vertices)[z].z(), 1);
 
-            renderSingleTriangle(tri, renderType, i);
-        }
-    }
+    //        tri.normals[0] = (*normals)[x];
+    //        tri.normals[1] = (*normals)[y];
+    //        tri.normals[2] = (*normals)[z];
+
+    //        renderSingleTriangle(tri, renderType, i);
+    //    }
+    //}
+
+
+
+
+
+    //renderFragments(renderType);
 }
 
 
@@ -301,20 +373,52 @@ void FastRenderer::colorRenderer(int index, float depth, const FragmentInput* fi
 
     Vector3f color = constantBuffer.material->fragmentShader(constantBuffer, constantBuffer.material->shaderProps, input);
 
-    color.x() = std::min(color.x(), 1.0f);
-    color.y() = std::min(color.y(), 1.0f);
-    color.z() = std::min(color.z(), 1.0f);
+    float gamma = 1 / 2.2;
+    color.x() = std::pow(std::min(color.x(), 1.0f), gamma);
+    color.y() = std::pow(std::min(color.y(), 1.0f), gamma);
+    color.z() = std::pow(std::min(color.z(), 1.0f), gamma);
 
     int colorIndex = index * 4;
-    colorBuffer[colorIndex + 0] = color.x() * 255.99;
-    colorBuffer[colorIndex + 1] = color.y() * 255.99;
-    colorBuffer[colorIndex + 2] = color.z() * 255.99;
-    colorBuffer[colorIndex + 3] = 255.99;
+    colorBuffer[colorIndex + 0] = color.x() * 255;
+    colorBuffer[colorIndex + 1] = color.y() * 255;
+    colorBuffer[colorIndex + 2] = color.z() * 255;
+    colorBuffer[colorIndex + 3] = 255;
 }
 
-int FastRenderer::renderSingleTriangle(const Triangle& tri, int renderType, int triIndex)
+void FastRenderer::renderFragments(int renderType)
+{
+    int n = fragments.size();
+	for (int i = 0; i < n; ++i) {
+		const FragmentInfo& currFragment = fragments[i];
+		if (renderType == 0) {
+			depthRenderer(currFragment.pixelIndex, currFragment.depth, currFragment.fi, currFragment.baryCoord, currFragment.perspectiveBaryCoord);
+		}
+		else {
+			colorRenderer(currFragment.pixelIndex, currFragment.depth, currFragment.fi, currFragment.baryCoord, currFragment.perspectiveBaryCoord);
+		}
+    }
+    fragments.clear();
+}
+
+int FastRenderer::renderSingleTriangle(Triangle& tri, int renderType, int triIndex)
 {
     Triangle screenSpaceTri;
+
+    Vector3f a = tri.v[0].head(3);
+    Vector3f b = tri.v[1].head(3);
+    Vector3f c = tri.v[2].head(3);
+
+    Vector3f crossNormal = -((b - a).cross(c - b)).normalized();
+    Vector3f aveNormal = (tri.normals[0] + tri.normals[1] + tri.normals[2]).normalized();
+    Vector3f avePos = (a + b + c) / 3;
+
+    if (crossNormal.dot(aveNormal) < 0) {
+    //    //qDebug() << "not counter clockwise";
+        std::swap(tri.v[0], tri.v[2]);
+        std::swap(tri.normals[0], tri.normals[2]);
+        std::swap(tri.texCoords[0], tri.texCoords[2]);
+        std::swap(tri.colors[0], tri.colors[2]);
+    }
 
     FragmentInput fi[3];
     for (int i = 0; i < 3; ++i) {
@@ -425,10 +529,12 @@ int FastRenderer::renderSingleTriangle(const Triangle& tri, int renderType, int 
                 float depth = baryCoord.x() * screenSpaceTri.v[0].z() + baryCoord.y() * screenSpaceTri.v[1].z() + baryCoord.z() * screenSpaceTri.v[2].z();
 
                 if (depth > 0 && depth < 1 && depth >= depthBuffer[pixelIndex]) {
-                    //if (depthBuffer[pixelIndex] > 0)
-						//qDebug("depth = %f, depthBuffer = %f", depth, depthBuffer[pixelIndex]);
                     if (renderType == 0) depthRenderer(pixelIndex, depth, fi, baryCoord, perspectiveBaryCoord);
                     else colorRenderer(pixelIndex, depth, fi, baryCoord, perspectiveBaryCoord);
+                    //depthBuffer[pixelIndex] = depth;
+                    //if (renderType == 1) colorRenderer(pixelIndex, depth, fi, baryCoord, perspectiveBaryCoord);
+                    
+                    //fragments.push_back(FragmentInfo(pixelIndex, depth, fi, baryCoord, perspectiveBaryCoord));
                 }
             }
         }

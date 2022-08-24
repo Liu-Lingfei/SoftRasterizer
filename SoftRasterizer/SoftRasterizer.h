@@ -23,6 +23,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
+#include <chrono>
 
 #include "Eigen/Dense"
 using Eigen::MatrixXd;
@@ -44,9 +45,8 @@ class SoftRasterizer : public QMainWindow
 
 public:
     SoftRasterizer(QWidget *parent = nullptr);
-    SoftRasterizer(const SoftRasterizer& r) = delete;
+    //SoftRasterizer(const SoftRasterizer& r) = delete;
     ~SoftRasterizer();
-
     
 
 
@@ -58,22 +58,30 @@ protected:
     void wheelEvent(QWheelEvent* e);
 
 private:
-    Ui::SoftRasterizerClass ui;
+    const int imageWidth = 1024;
+    const int imageHeight = 1024;
+    const int shadowWidth = 512;
 
-    const int imageWidth = 1920;
-    const int imageHeight = 1080;
-    const int shadowWidth = 1024;
+    Ui::SoftRasterizerClass ui;
+    QLabel* fpsLabel;
+    QLabel* resolutionLabel;
+    QLabel* shadowWidthLabel;
+
 
     QPixmap pix;
-    QImage img;
-    QLabel label;
+    QImage *img;
     uchar* frontBuffer;
+    QImage *depthImg;
+    uchar* depthBuffer;
 
     Scene scene;
     
     QPoint lastFrameMousePos;
     clock_t lastFrameTime;
     float deltaTime;
+
+    int frameCount;
+    int frameRate;
 };
 
 //template<typename T>

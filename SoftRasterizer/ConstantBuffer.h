@@ -24,6 +24,7 @@ struct ConstantBuffer
 	Matrix4f worldToCamera;
 	Matrix4f projection;
 	int cameraType;
+	const float* depthBuffer;
 
 	// per light info
 	Vector3f lightPos;
@@ -32,7 +33,7 @@ struct ConstantBuffer
 
 	Matrix4f lightShadowViewMatrix;
 	Matrix4f lightShadowProjMatrix;
-	float* lightShadowMap;
+	const float* lightShadowMap;
 	int lightShadowWidth;
 	int lightType;
 	int lightNear;

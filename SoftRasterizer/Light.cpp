@@ -20,6 +20,13 @@ void DirectionalLight::setDirectionalLightShadowArea(float near, float far, floa
 	camera->setBottom(bottom);
 	camera->setTop(top);
 	camera->updateProjection();
+
+	qDebug("setDirectionalLightShadowArea:");
+	qDebug("projection:");
+	MyTransform::print(camera->getProjection());
+	qDebug("view:");
+	MyTransform::print(camera->getWorldToCamera());
+	qDebug("");
 }
 
 void DirectionalLight::setPointLightLightShadowArea(float near, float far, float vfov, float ratio)
@@ -29,6 +36,13 @@ void DirectionalLight::setPointLightLightShadowArea(float near, float far, float
 	camera->setVFov(vfov);
 	camera->setRatio(ratio);
 	camera->updateProjection();
+
+	qDebug("setPointLightShadowArea:");
+	qDebug("projection:");
+	MyTransform::print(camera->getProjection());
+	qDebug("view:");
+	MyTransform::print(camera->getWorldToCamera());
+	qDebug("");
 }
 
 void DirectionalLight::updateCameraPose()
@@ -50,6 +64,9 @@ void DirectionalLight::updateCameraPose()
 
 void DirectionalLight::toPointLight()
 {
+	lightType = 1;
+	camera->type = 0;
+	return;
 	if (lightType == 0) {
 		lightType = 1;
 		if (camera) {
@@ -66,31 +83,38 @@ void DirectionalLight::toPointLight()
 			//qDebug("direction = (%f, %f, %f)", direction.x(), direction.y(), direction.z());
 			//qDebug("position = (%f, %f, %f)", position.x(), position.y(), position.z());
 
-			qDebug("before to point light, transform = ");
-			MyTransform::print(camera->getWorldToCamera());
-			qDebug("before to point light, projection = ");
-			MyTransform::print(camera->getProjection());
+			//qDebug("before to point light, transform = ");
+			//MyTransform::print(camera->getWorldToCamera());
+			//qDebug("before to point light, projection = ");
+			//MyTransform::print(camera->getProjection());
 
-			delete camera;
-			camera = new Camera(0, position, position - direction, up);
+			//delete camera;
+			//camera = new Camera(0, position, position - direction, up);
 			//camera = new Camera();
-			camera->setNear(near);
-			camera->setFar(far);
-			camera->setVFov(vfov);
-			camera->setRatio(ratio);
-			camera->updateTransform();
-			camera->updateProjection();
 
-			qDebug("after to point light, transform = ");
-			MyTransform::print(camera->getWorldToCamera());
-			qDebug("after to point light, projection = ");
-			MyTransform::print(camera->getProjection());
+			camera->type = 0;
+
+			//camera->setNear(near);
+			//camera->setFar(far);
+			//camera->setVFov(vfov);
+			//camera->setRatio(ratio);
+			//camera->updateTransform();
+			//camera->updateProjection();
+
+			//qDebug("after to point light, transform = ");
+			//MyTransform::print(camera->getWorldToCamera());
+			//qDebug("after to point light, projection = ");
+			//MyTransform::print(camera->getProjection());
 		}
 	}
 }
 
 void DirectionalLight::toDirectionalLight()
 {
+	lightType = 0;
+	camera->type = 1;
+	return;
+
 	if (lightType == 1) {
 		lightType = 0;
 		if (camera) {
@@ -100,30 +124,31 @@ void DirectionalLight::toDirectionalLight()
 			float ratio = camera->ratio;
 
 			float top = std::tan(vfov * M_PI / 180) * near;
-			float right = top * ratio;
+			float right = top / ratio;
 
 			Vector3f up = camera->up;
 
-			qDebug("before to directional light, transform = ");
-			MyTransform::print(camera->getWorldToCamera());
-			qDebug("before to directional light, projection = ");
-			MyTransform::print(camera->getProjection());
+			//qDebug("before to directional light, transform = ");
+			//MyTransform::print(camera->getWorldToCamera());
+			//qDebug("before to directional light, projection = ");
+			//MyTransform::print(camera->getProjection());
 
-			delete camera;
-			camera = new Camera(1, position, position - direction, up);
-			camera->setNear(near);
-			camera->setFar(far);
-			camera->setLeft(-right);
-			camera->setRight(right);
-			camera->setBottom(-top);
-			camera->setTop(top);
-			camera->updateTransform();
-			camera->updateProjection();
+			//delete camera;
+			//camera = new Camera(1, position, position - direction, up);
+			camera->type = 1;
+			//camera->setNear(near);
+			//camera->setFar(far);
+			//camera->setLeft(-right);
+			//camera->setRight(right);
+			//camera->setBottom(-top);
+			//camera->setTop(top);
+			//camera->updateTransform();
+			//camera->updateProjection();
 
-			qDebug("after to directional light, transform = ");
-			MyTransform::print(camera->getWorldToCamera());
-			qDebug("after to directional light, projection = ");
-			MyTransform::print(camera->getProjection());
+			//qDebug("after to directional light, transform = ");
+			//MyTransform::print(camera->getWorldToCamera());
+			//qDebug("after to directional light, projection = ");
+			//MyTransform::print(camera->getProjection());
 		}
 	}
 }

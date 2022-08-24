@@ -57,17 +57,17 @@ int Camera::getHeight()
 	return renderer->screenHeight;
 }
 
-float* Camera::getDepthBuffer()
+const float* Camera::getDepthBuffer() const
 {
 	return renderer->depthBuffer;
 }
 
-float* Camera::getShadowMap()
+const float* Camera::getShadowMap() const
 {
 	return renderer->shadowMap;
 }
 
-uchar* Camera::getColorBuffer()
+const uchar* Camera::getColorBuffer() const
 {
 	return renderer->colorBuffer;
 }
@@ -265,10 +265,11 @@ void Camera::updateProjection() {
 
 void Camera::updatePerspectiveProjection()
 {
+	projection = Matrix4f::Zero();
 	float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
 	float c = 1.0 / std::tan(halfRadianFov);
-	qDebug("helfRadianFov = %f", halfRadianFov);
-	qDebug("c = %f", c);
+	//qDebug("helfRadianFov = %f", halfRadianFov);
+	//qDebug("c = %f", c);
 
 	projection(0, 0) = c / ratio;
 	projection(1, 1) = c;
@@ -284,6 +285,7 @@ void Camera::updateOrthographicProjection()
 	//c = c / near;
 	//projection(0, 0) = c / ratio;
 	//projection(1, 1) = c;
+	projection = Matrix4f::Identity();
 
 	projection(0, 0) = 2.0f / (right - left);
 	projection(1, 1) = 2.0f / (top - bottom);

@@ -3,77 +3,220 @@
 SoftRasterizer::SoftRasterizer(QWidget* parent)
     :
     QMainWindow(parent),
-    img(imageWidth, imageHeight, QImage::Format_RGBA8888),
-    frontBuffer(img.bits()),
+    //img(imageWidth, imageHeight, QImage::Format_RGBA8888),
+    scene(imageWidth, imageHeight, shadowWidth),
+    //frontBuffer(img.bits()),
     lastFrameMousePos(0, 0),
-    deltaTime(0)
+    deltaTime(0),
+    lastFrameTime(clock()),
+    frameCount(0),
+    frameRate(0)
 {
+    //setFixedSize(1920, 1024);
+    //resize(1500, 1000);
+    //setFixedWidth(1500);
+    //setFixedHeight(1000);
     ui.setupUi(this);
-    resize(1920, 1080);
-
-    //r.reset(new Renderer(imageWidth, imageHeight, shadowWidth));
-    //r = new FastRenderer(imageWidth, imageHeight, shadowWidth);
-    //r->bindReader(&reader);
-    //r->setCamera(&cam);
-    //r->setShadowCamera(&shadowCam);
-    //r->setMainLight(&mainLight);
-    //r->setMaterial(&m);
-    //r->setShadowMaterial(&shadowMaterial);
-    //r->setModelMatrix(&modelMatrix);
-    //r->bindConstantBuffer(&cb);
-    //r->setShadowConstantBuffer(&shadowCb);
+    ui.mainToolBar->close();
+    ui.menuBar->close();
 
 
-    img.fill(Qt::white);
-    label.setParent(this);
-    label.setGeometry(0, 0, img.width(), img.height());
-    label.show();
+    img = new QImage(imageWidth, imageHeight, QImage::Format_RGBA8888);
+    depthImg = new QImage(shadowWidth, shadowWidth, QImage::Format_RGBA8888);
 
-    //clearBuffer = new uchar[bufferSize];
-    //setClearColor(Vector4f(0, 0, 0, 255));
+    frontBuffer = img->bits();
+    img->fill(Qt::white);
 
-    //cam.setVFov(90);
-    //cam.setRatio(float(imageWidth) / float(imageHeight));
-    //cam.setNear(1);
-    //cam.setFar(50);
-    //resetCamera();
-    //cam.updateTransform();
-    //cam.updateProjection();
+    depthBuffer = depthImg->bits();
+    depthImg->fill(Qt::black);
 
-    //loadModel("");
+    //img.fill(Qt::white);
 
-    //mainLight.color = Vector3f(1, 1, 1);
-    ////mainLight.direction = Vector3f(0, 1, 0);
-    ////mainLight.position = Vector3f(0, 10, 0);
-    //mainLight.direction = Vector3f(1, 1, 0);
-    //mainLight.position = Vector3f(10, 10, 0);
+    //label.setParent(this);
+    //label.setGeometry(200, 200, img->width(), img->height());
+    //label.show();
 
-    //cb.mainLight = mainLight;
 
-    //m.shaderProps.albedo = Vector3f(0.9, 0.5, 0.5);
-    //m.shaderProps.specular = Vector3f(0.1, 0.1, 0.1);
-    //m.shaderProps.ambientColor = Vector3f(0.1, 0.1, 0.1);
+    resolutionLabel = new QLabel("resolution", this);
+    shadowWidthLabel = new QLabel("shadowmap width", this);
+    fpsLabel = new QLabel("fps", this);
+    ui.statusBar->addWidget(resolutionLabel);
+    ui.statusBar->addWidget(shadowWidthLabel);
+    ui.statusBar->addWidget(fpsLabel);
 
-    //m.shaderProps.smoothness = 0.8;
-    //m.shaderProps.metallic = 0.8;
+    connect(ui.softShadowCheckBox, &QCheckBox::stateChanged, [=](int state) {setSoftShadow(state == Qt::Checked); });
+    connect(ui.displayShadowMapCheckBox, &QCheckBox::stateChanged, [=](int state) {scene.setDisplayShadowMap(state == Qt::Checked); depthImg->fill(Qt::black); });
 
-    //m.vertexShader = CommonVertexShader;
-    //m.fragmentShader = UnityPBRFragmentShader;
+    connect(ui.directionalLightButton, &QRadioButton::toggled, [=](bool checked) {scene.setDirectionalLight(checked); });
+    connect(ui.pointLightButton, &QRadioButton::toggled, [=](bool checked) {scene.setPointLight(checked); });
 
-    //shadowMaterial.vertexShader = ShadowMapVertexShader;
-    //shadowMaterial.fragmentShader = ShadowMapFragmentShader;
+    connect(ui.smoothnessSlider, &QSlider::valueChanged, [=](int value) {scene.setSmoothness(value); });
+    connect(ui.metallicSlider, &QSlider::valueChanged, [=](int value) {scene.setMetallic(value); });
 
-    //resetShadowCamera();
-    //shadowCam.updateProjection();
-    //shadowCam.updateTransform();
-    //updateShadowConstantBuffer();
+    connect(ui.redSlider, &QSlider::valueChanged, [=](int value) {scene.setRed(value); });
+    connect(ui.greenSlider, &QSlider::valueChanged, [=](int value) {scene.setGreen(value); });
+    connect(ui.blueSlider, &QSlider::valueChanged, [=](int value) {scene.setBlue(value); });
 
-    //updateConstantBuffer();
+    connect(ui.lightIntensitySlider, &QSlider::valueChanged, [=](int value) {scene.setLightIntensity(value); });
+    connect(ui.lightRedSlider, &QSlider::valueChanged, [=](int value) {scene.setLightRed(value); });
+    connect(ui.lightGreenSlider, &QSlider::valueChanged, [=](int value) {scene.setLightGreen(value); });
+    connect(ui.lightBlueSlider, &QSlider::valueChanged, [=](int value) {scene.setLightBlue(value); });
+
 }
 
 SoftRasterizer::~SoftRasterizer()
 {
 }
+
+
+void SoftRasterizer::paintEvent(QPaintEvent*)
+{
+    clock_t currTime = clock();
+
+    clock_t start, end;
+    start = clock();
+
+    //qDebug() << ui.label->size();
+    *img = img->scaled(ui.label->size());
+
+    frontBuffer = img->bits();
+    depthBuffer = depthImg->bits();
+
+    scene.render(frontBuffer, depthBuffer, img->width(), img->height(), shadowWidth);
+
+    ui.label->setPixmap(QPixmap::fromImage(*img));
+    ui.label_2->setPixmap(QPixmap::fromImage(*depthImg));
+
+
+    end = clock();
+    resolutionLabel->setText(QString("resolution: (%1 x %2)\t").arg(img->width()).arg(img->height()));
+    shadowWidthLabel->setText(QString("shadowmap width: (%1 x %1)\t").arg(shadowWidth));
+    //fpsLabel->setText(QString("FPS: %1").arg(int(CLOCKS_PER_SEC / double(end - start))));
+	fpsLabel->setText(QString("FPS: %1").arg(frameRate));
+
+    ++frameCount;
+    if (currTime - lastFrameTime >= CLOCKS_PER_SEC) {
+		deltaTime = float(currTime - lastFrameTime) / float(CLOCKS_PER_SEC);
+        frameRate = frameCount / deltaTime;
+        frameCount = 0;
+        lastFrameTime = currTime;
+    }
+}
+
+void SoftRasterizer::keyPressEvent(QKeyEvent* e)
+{
+    const float speed = 0.25;
+
+    float step = speed;
+
+    Vector3f offset = Vector3f::Zero();
+    //Vector3f front = cam.z;
+    //Vector3f right = cam.x;
+    //Vector3f up = cam.y;
+    switch (e->key())
+    {
+    case Qt::Key_W:
+
+
+        offset.z() = 1;
+		offset *= step;
+		scene.updateCameraPosition(offset);
+        break;
+    case Qt::Key_S:
+        offset.z() = -1;
+		offset *= step;
+		scene.updateCameraPosition(offset);
+        break;
+    case Qt::Key_A:
+        offset.x() = -1;
+		offset *= step;
+		scene.updateCameraPosition(offset);
+        break;
+    case Qt::Key_D:
+        offset.x() = 1;
+		offset *= step;
+		scene.updateCameraPosition(offset);
+        break;
+    case Qt::Key_Q:
+        offset.y() = -1;
+		offset *= step;
+		scene.updateCameraPosition(offset);
+        break;
+    case Qt::Key_E:
+        offset.y() = 1;
+		offset *= step;
+		scene.updateCameraPosition(offset);
+        break;
+    //case Qt::Key_Space:
+    case Qt::Key_Escape:
+        //qDebug("key_space");
+        scene.resetCamera(img->width(), img->height());
+        scene.resetModelMatrix();
+        break;
+    }
+
+}
+
+void SoftRasterizer::mousePressEvent(QMouseEvent* e)
+{
+    lastFrameMousePos = e->globalPos();
+}
+
+void SoftRasterizer::mouseMoveEvent(QMouseEvent* e)
+{
+    QPoint currFrameMousePos = e->globalPos();
+    QPoint offset = (currFrameMousePos - lastFrameMousePos);
+
+    Vector2f rotation(float(offset.x()) / float(imageWidth), float(offset.y()) / float(imageHeight));
+    float rotationRadian = rotation.norm() * M_PI;
+    Vector2f rotationRadians = rotation * M_PI;
+
+    Vector3f rotationAxis(offset.y(), offset.x(), 0);
+    rotationAxis.normalize();
+
+    // rotate camera
+    if (e->buttons() & Qt::LeftButton) {
+        scene.updateCameraRotation(rotationAxis, rotationRadian);
+
+        //cam.rotate(rotationAxis, -rotationRadian);
+        //cam.rotateAroundY(rotationRadians.x());
+        //cam.rotateAroundX(rotationRadians.y());
+        //cam.updateTransform();
+
+        //Vector3f viewDir = cam.target - cam.pos;
+        //qDebug("viewDir = (%f, %f, %f)", viewDir.x(), viewDir.y(), viewDir.z());
+        //shadowCam.rotate(rotationAxis, rotationRadian);
+        //shadowCam.updateTransform();
+    }
+    // rotate object
+    else if (e->buttons() & Qt::RightButton) {
+        Eigen::AngleAxisf rotationVector(-rotationRadian, rotationAxis);
+        Matrix3f rotationMatrix = rotationVector.matrix();
+
+        scene.updateObjectToWorld(rotationMatrix);
+        //modelMatrix.topLeftCorner(3, 3) = rotationMatrix * modelMatrix.topLeftCorner(3, 3);
+    }
+
+    lastFrameMousePos = currFrameMousePos;
+}
+
+void SoftRasterizer::wheelEvent(QWheelEvent* e)
+{
+    const float speed = 0.01;
+    float step = speed * e->angleDelta().y();
+
+    scene.updateCameraVfov(step);
+    //float fov = cam.vfov;
+    //fov -= step;
+    //fov = std::max(fov, 0.0f);
+    //fov = std::min(fov, 180.0f);
+    //cam.setVFov(fov);
+    //cam.updateProjection();
+
+    //shadowCam.setVFov(fov);
+    //shadowCam.updateProjection();
+}
+
 
 //int SoftRasterizer::drawTriangle(uchar* backBuffer, Triangle& tri)
 //{
@@ -493,196 +636,7 @@ SoftRasterizer::~SoftRasterizer()
 //    }
 //}
 
-void func(QString name)
-{
-    //for (int i = 0; i < 10; ++i) {
-		qDebug() << 0 << ": " << name << "from" << QThread::currentThread();
-    //}
-}
 
-void proc(int& a)
-{
-    qDebug() << "i am child thread, in param = " << a;
-    //qDebug() << "子线程中显示子线程id为" << std::this_thread::get_id() << endl;
-}
-
-void SoftRasterizer::paintEvent(QPaintEvent*)
-{
-    //return;
-    //int a = 9;
-    //int b = 4;
-    //std::thread th2(proc, std::ref(a));//第一个参数为函数名，第二个参数为该函数的第一个参数，如果该函数接收多个参数就依次写在后面。此时线程开始执行。
-    //std::thread th3(proc, std::ref(b));//第一个参数为函数名，第二个参数为该函数的第一个参数，如果该函数接收多个参数就依次写在后面。此时线程开始执行。
-    //qDebug() << "i am father thread";
-    ////此处省略多行，不要在创建完线程后马上join,应该在程序结束前join
-    //th2.join();//此时主线程被阻塞直至子线程执行结束。
-    //th3.join();//此时主线程被阻塞直至子线程执行结束。
-
-    //QFuture<void> fut1 = run(func, QString("Thread 1"));
-    //QFuture<void> fut2 = run(func, QString("Thread 2"));
-
-    //fut1.waitForFinished();
-    //fut2.waitForFinished();
-    //return;
-
-    clock_t currTime = clock();
-    deltaTime = float(currTime - lastFrameTime) / CLOCKS_PER_SEC;
-    lastFrameTime = currTime;
-
-    clock_t start, end;
-    start = clock();
-    scene.render(frontBuffer);
-    label.setPixmap(QPixmap::fromImage(img));
-
- //   updateShadowConstantBuffer();
- //   updateConstantBuffer();
-
- //   r->renderSingleFrame(frontBuffer);
-	//label.setPixmap(QPixmap::fromImage(img));
-	//end = clock();
- //   qDebug() << CLOCKS_PER_SEC / double(end - start) << " FPS";
- //   qDebug() << double(end - start) / CLOCKS_PER_SEC  << " s";
- //   return;
-
- //   auto& attrib = reader.GetAttrib();
- //   auto& shapes = reader.GetShapes();
- //   auto& materials = reader.GetMaterials();
-
-
-
-	//clear();
-
- //   // On CPU and simple scene, earlyZ may slow down render speed
- //   if (earlyZ)
-	//	renderDepthMap();
-
- //   renderShadowMap();
-
- //   render();
-
-	//label.setPixmap(QPixmap::fromImage(img));
-
-
-	end = clock();
-    qDebug() << CLOCKS_PER_SEC / double(end - start) << " FPS";
-    qDebug() << double(end - start) / CLOCKS_PER_SEC  << " s";
-}
-
-void SoftRasterizer::keyPressEvent(QKeyEvent* e)
-{
-    const float speed = 0.25;
-    
-    float step = speed;
-
-    Vector3f offset = Vector3f::Zero();
-    //Vector3f front = cam.z;
-    //Vector3f right = cam.x;
-    //Vector3f up = cam.y;
-    switch (e->key())
-    {
-    case Qt::Key_W:
-        //offset = front;
-        offset.z() = 1;
-        break;
-    case Qt::Key_S:
-        //offset =  -front;
-        offset.z() = -1;
-        break;
-    case Qt::Key_A:
-        //offset =  -right;
-        offset.x() = -1;
-        break;
-    case Qt::Key_D:
-        //offset =  right;
-        offset.x() = 1;
-        break;
-    case Qt::Key_Q:
-        //offset =  -up;
-        offset.y() = -1;
-        break;
-    case Qt::Key_E:
-        //offset =  up;
-        offset.y() = 1;
-        break;
-    case Qt::Key_Space:
-        scene.resetCamera();
-        scene.resetModelMatrix();
-		//resetCamera();
-        //resetModelMatrix();
-		//resetShadowCamera();
-		break;
-    }
-    offset *= step;
-
-    scene.updateCameraPosition(offset);
- //   cam.setPosition(cam.pos + offset);
- //   cam.setTarget(cam.target + offset);
-	//cam.updateTransform();
-
-    //shadowCam.setPosition(shadowCam.pos + offset);
-    //shadowCam.setTarget(shadowCam.target + offset);
-    //shadowCam.updateTransform();
-}
-
-void SoftRasterizer::mousePressEvent(QMouseEvent* e)
-{
-    lastFrameMousePos = e->globalPos();
-}
-
-void SoftRasterizer::mouseMoveEvent(QMouseEvent* e)
-{
-    QPoint currFrameMousePos = e->globalPos();
-    QPoint offset = (currFrameMousePos - lastFrameMousePos);
-
-    Vector2f rotation(float(offset.x()) / float(imageWidth), float(offset.y()) / float(imageHeight));
-    float rotationRadian = rotation.norm() * M_PI;
-    Vector2f rotationRadians = rotation * M_PI;
-
-    Vector3f rotationAxis(offset.y(), offset.x(), 0);
-    rotationAxis.normalize();
-
-    // rotate camera
-    if (e->buttons() & Qt::LeftButton) {
-        scene.updateCameraRotation(rotationAxis, rotationRadian);
-
-		//cam.rotate(rotationAxis, -rotationRadian);
-		//cam.rotateAroundY(rotationRadians.x());
-		//cam.rotateAroundX(rotationRadians.y());
-		//cam.updateTransform();
-
-		//Vector3f viewDir = cam.target - cam.pos;
-		//qDebug("viewDir = (%f, %f, %f)", viewDir.x(), viewDir.y(), viewDir.z());
-		//shadowCam.rotate(rotationAxis, rotationRadian);
-		//shadowCam.updateTransform();
-    }
-    // rotate object
-    else if (e->buttons() & Qt::RightButton) {
-        Eigen::AngleAxisf rotationVector(-rotationRadian, rotationAxis);
-        Matrix3f rotationMatrix = rotationVector.matrix();
-
-        scene.updateObjectToWorld(rotationMatrix);
-        //modelMatrix.topLeftCorner(3, 3) = rotationMatrix * modelMatrix.topLeftCorner(3, 3);
-    }
-
-    lastFrameMousePos = currFrameMousePos;
-}
-
-void SoftRasterizer::wheelEvent(QWheelEvent* e)
-{
-    const float speed = 0.01;
-    float step = speed * e->angleDelta().y();
-
-    scene.updateCameraVfov(step);
-    //float fov = cam.vfov;
-    //fov -= step;
-    //fov = std::max(fov, 0.0f);
-    //fov = std::min(fov, 180.0f);
-    //cam.setVFov(fov);
-    //cam.updateProjection();
-
-    //shadowCam.setVFov(fov);
-    //shadowCam.updateProjection();
-}
 
 
 //void SoftRasterizer::resetCamera()

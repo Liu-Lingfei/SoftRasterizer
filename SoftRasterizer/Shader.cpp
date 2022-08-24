@@ -2,8 +2,8 @@
 
 Vector2f poissonDisk[100];
 bool enableSoftShadow = false;
-int numSamples = 5;
-int numRings = 5;
+int numSamples = 10;
+int numRings = 2;
 int filterSize = 5;
 
 void setSoftShadow(bool enable) {
@@ -98,15 +98,33 @@ float findBlocker(const float* shadowMap, int shadowWidth, const Vector2f& uv, f
 {
 	int count = 0;
 	float blockerDepth = 0.0;
+
+	//qDebug("original xy = (%d, %d)", (int)(uv.x() * shadowWidth), (int)(uv.y() * shadowWidth));
 	for (int i = 0; i < numSamples; ++i) {
-		int index = uv.x() + (shadowWidth - 1 - uv.y()) * shadowWidth;
+
+		int x = uv.x() * shadowWidth;
+		int y = uv.y() * shadowWidth;
+		x += poissonDisk[i].x() * filterSize;
+		y += poissonDisk[i].y() * filterSize;
+		x = std::max(0, x);
+		x = std::min(shadowWidth - 1, x);
+		y = std::max(0, y);
+		y = std::min(shadowWidth - 1, y);
+
+		//qDebug("poissonDisk[%d] = (%f, %f)", i, poissonDisk[i].x(), poissonDisk[i].y());
+		//qDebug("offset xy = (%f, %f)", poissonDisk[i].x() * filterSize , poissonDisk[i].y() * filterSize);
+
+		int index = x + (shadowWidth - 1 - y) * shadowWidth;
+
 		float sampledDepth = shadowMap[index];
 		if (depth <= sampledDepth) {
 			blockerDepth += sampledDepth;
 			count++;
 		}
 	}
-	return blockerDepth / float(count);
+	//qDebug("count = %d", count);
+	return count == 0 ? -1 : blockerDepth / float(count);
+	//return blockerDepth / float(count);
 }
 
 float PCF(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth)
@@ -149,6 +167,7 @@ float PCSS(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, co
 	// STEP 1: avgblocker depth
 	//poissonDiskSamples(coords.xy);
 	float blockerDepth = findBlocker(shadowMap, shadowWidth, uv, depth);
+	if (blockerDepth == -1) return 1;
 	float linearBlockerDepth = linearDepth(cb, blockerDepth);
 	float linear = linearDepth(cb, depth);
 
@@ -160,18 +179,11 @@ float PCSS(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, co
 
 	//qDebug("depth = %f, blockerDepth = %f, penumbra = %f", depth, blockerDepth, penumbra);
 	//qDebug("linearDepth = %f, linearBlockerDepth = %f, penumbra = %f", linear, linearBlockerDepth, penumbra);
-
 	//qDebug("filterWidthInPixel = %f", filterWidthInPixel);
 
 	// STEP 3: filtering
 	int count = 0;
 	for (int i = 0; i < numSamples; ++i) {
-
-		//vec4 rgbaDepth = texture2D(shadowMap, coords.xy + poissonDisk[i] * penumbra * 0.5);
-		//float depth = unpack(rgbaDepth);
-		//if (depth < EPS) depth = 1.0;
-
-
 		int x = uv.x() * shadowWidth;
 		int y = uv.y() * shadowWidth;
 		x += poissonDisk[i].x() * filterWidthInPixel;
@@ -203,13 +215,15 @@ float sampleShadowMap(const ConstantBuffer& cb, const float* shadowMap, int shad
 
 
 	float sine = std::sqrt(1.0f - NdotL * NdotL);
-	float bias = std::max(0.001f, 0.01f * sine);
+	//sine = 1.0f - NdotL;
+	float bias = std::max(0.002f, 0.02f * sine);
+	//bias = 0;
 
 
 	//return PCF(shadowMap, shadowWidth, uv, depth + bias);
 	float shadowDepth = shadowMap[x + y * shadowWidth];
-	//if (shadowDepth != 0) {
-		//qDebug("depth = %f, shadowDepth = %f", depth, shadowDepth);
+	//if (depth + bias < shadowDepth) {
+		//qDebug("shadowUV =(%d, %d), depth = %f, shadowDepth = %f", x, y, depth, shadowDepth);
 	//}
 	//return depth + bias >= shadowDepth;
 
@@ -445,15 +459,83 @@ Vector3f UnityPBRFragmentShader(const ConstantBuffer& cb, const ShaderProperties
 	//return brdfData.specular * temp;
 	//return brdf;
 	//return brdfData.specular;
+
 	return (brdf.array() * radiance.array()).matrix();
 }
 
 
-Vector3f computeShadowCoord(const ConstantBuffer& cb, const FragmentInput& input)
-{
-	Vector4f shadowCS = cb.lightShadowProjMatrix * cb.lightShadowViewMatrix * input.positionWS;
-	float invW = 1.0 / shadowCS.w();
-	Vector2f shadowUV = (shadowCS.head(2) * invW * 0.5f) + Vector2f(0.5f, 0.5);
-	float shadowDepth = shadowCS.z() * invW;
-	return Vector3f(shadowUV.x(), shadowUV.y(), shadowDepth);
-}
+//Vector3f computeShadowCoord(const ConstantBuffer& cb, const FragmentInput& input)
+//{
+//	Vector4f shadowCS = cb.lightShadowProjMatrix * cb.lightShadowViewMatrix * input.positionWS;
+//	float invW = 1.0 / shadowCS.w();
+//	Vector2f shadowUV = (shadowCS.head(2) * invW * 0.5f) + Vector2f(0.5f, 0.5);
+//	float shadowDepth = shadowCS.z() * invW;
+//	return Vector3f(shadowUV.x(), shadowUV.y(), shadowDepth);
+//}
+//
+//float SSAO(const ConstantBuffer& cb, const FragmentInput& input)
+//{
+//	Vector2f uv = input.positionCS.head(2) / input.positionCS.w() * 0.5 + Vector2f(0.5, 0.5);
+//
+//	// Parameters used in coordinate conversion
+//	Matrix4f
+//	half3x3 camTransform = (half3x3)_CameraViewProjections[unity_eyeIndex]; // camera viewProjection matrix
+//
+//	// Get the depth, normal and view position for this fragment
+//	float depth_o;
+//	half3 norm_o;
+//	half3 vpos_o;
+//	SampleDepthNormalView(uv, depth_o, norm_o, vpos_o);
+//
+//	// This was added to avoid a NVIDIA driver issue.
+//	const half rcpSampleCount = half(rcp(SAMPLE_COUNT));
+//	half ao = 0.0;
+//	for (int s = 0; s < SAMPLE_COUNT; s++)
+//	{
+//		// Sample point
+//		half3 v_s1 = PickSamplePoint(uv, s);
+//
+//		// Make it distributed between [0, _Radius]
+//		v_s1 *= sqrt((half(s) + half(1.0)) * rcpSampleCount) * RADIUS;
+//
+//		v_s1 = faceforward(v_s1, -norm_o, v_s1);
+//
+//		half3 vpos_s1 = vpos_o + v_s1;
+//
+//		// Reproject the sample point
+//		half3 spos_s1 = mul(camTransform, vpos_s1);
+//
+//		#if defined(_ORTHOGRAPHIC)
+//			float2 uv_s1_01 = clamp((spos_s1.xy + float(1.0)) * float(0.5), float(0.0), float(1.0));
+//		#else
+//			float zdist = -dot(UNITY_MATRIX_V[2].xyz, vpos_s1);
+//			float2 uv_s1_01 = clamp((spos_s1.xy * rcp(zdist) + float(1.0)) * float(0.5), float(0.0), float(1.0));
+//		#endif
+//
+//			// Depth at the sample point
+//			float depth_s1 = SampleAndGetLinearEyeDepth(uv_s1_01);
+//
+//			// Relative position of the sample point
+//			half3 vpos_s2 = ReconstructViewPos(uv_s1_01, depth_s1);
+//			half3 v_s2 = vpos_s2 - vpos_o;
+//
+//			// Estimate the obscurance value
+//			half dotVal = dot(v_s2, norm_o);
+//			#if defined(_ORTHOGRAPHIC)
+//				dotVal -= half(2.0 * kBeta * depth_o);
+//			#else
+//				dotVal -= half(kBeta * depth_o);
+//			#endif
+//
+//			half a1 = max(dotVal, half(0.0));
+//			half a2 = dot(v_s2, v_s2) + kEpsilon;
+//			ao += a1 * rcp(a2);
+//		}
+//
+//	// Intensity normalization
+//	ao *= RADIUS;
+//
+//	// Apply contrast
+//	ao = PositivePow(ao * INTENSITY * rcpSampleCount, kContrast);
+//	return PackAONormal(ao, norm_o);
+//}

@@ -2,39 +2,32 @@
 #include "Scene.h"
 #include "Shader.h"
 
-Scene::Scene()
+Scene::Scene(int w, int h, int sw)
+	//imageWidth(w), imageHeight(h), shadowWidth(sw)
 {
+	displayShadowMap = false;
 	// set global info
 	Vector2f seed(rand() / double(RAND_MAX), rand() / double(RAND_MAX));
-	//poissonDiskSamples(seed, 2, 10);
+	//poissonDiskSamples(seed);
 	uniformDiskSamples(seed);
 	setSoftShadow(true);
-	//setSoftShadow(false);
 	resetModelMatrix();
 
-	const int shadowWidth = 1024;
+	//int pixelNum = imageWidth * imageHeight;
+	//shadowMap = new float[shadowWidth * shadowWidth];
+	//depthBuffer = new float[pixelNum];
+	//colorBuffer = new uchar[pixelNum * 4];
 
-	int pixelNum = imageWidth * imageHeight;
-	shadowMap = new float[shadowWidth * shadowWidth];
-	depthBuffer = new float[pixelNum];
-	colorBuffer = new uchar[pixelNum * 4];
+	//loadModel("./models/spot/spot_triangulated_good.obj");
 
-	loadModel("./models/spot/spot_triangulated_good.obj");
-
-
+	loadModel("./models/cube/cube.obj");
+	//loadModel("./models/Crate/Crate1.obj");
+	//loadModel("./models/bunny/bunny.obj");
 
 
 	// reset camera
 
-	resetCamera();
-	mainCamera.updateTransform();
-	mainCamera.updateProjection();
-
-	qDebug("main camera.projection:");
-	MyTransform::print(mainCamera.projection);
-	qDebug("main camera.worldToCamera:");
-	qDebug("");
-	MyTransform::print(mainCamera.worldToCamera);
+	resetCamera(w, h);
 
 	ConstantBuffer constantBuffer;
 	mainCamera.createRenderer();
@@ -44,11 +37,11 @@ Scene::Scene()
 
 	resetLight();
 	mainLight.updateCameraPose();
-	mainLight.toPointLight();
-	mainLight.toDirectionalLight();
+
+	//mainLight.toPointLight();
+	//mainLight.toDirectionalLight();
 
 	mainLight.setDirectionalLightShadowArea(1, 10, -2, 2, -2, 2);
-	//mainLight.setPointLightLightShadowArea(0.1, 50, 90, 1);
 	//mainLight.setPointLightLightShadowArea(1, 1000, 90, 1);
 
 	//qDebug("mainlight.camera.ratio = %f", mainLight.camera->ratio);
@@ -64,7 +57,7 @@ Scene::Scene()
 
 	//cb.mainLight = mainLight;
 
-	globalMaterial.shaderProps.albedo = Vector3f(0.9, 0.5, 0.5);
+	globalMaterial.shaderProps.albedo = Vector3f(1.0, 0.5, 0.5);
 	globalMaterial.shaderProps.specular = Vector3f(0.1, 0.1, 0.1);
 	globalMaterial.shaderProps.ambientColor = Vector3f(0.1, 0.1, 0.1);
 
@@ -95,15 +88,20 @@ Scene::~Scene()
 	mainCamera.disposeRenderer();
 }
 
-void Scene::render(uchar* buffer) {
-	//updateConstantBuffer();
+void Scene::render(uchar* buffer, uchar* dBuffer, int imageWidth, int imageHeight, int shadowWidth) {
 
-	const int shadowWidth = 1024;
+	//imageWidth = 1920;
+	//imageHeight = 1080;
+	mainCamera.setRatio(float(imageWidth) / float(imageHeight));
+	mainCamera.updateProjection();
+	mainCamera.updateTransform();
+
+	//const int shadowWidth = 1024;
 	int pixelNum = imageWidth * imageHeight;
 
-	//float* shadowMap = new float[shadowWidth * shadowWidth];
-	//float* depthBuffer = new float[pixelNum];
-	//uchar* colorBuffer = new uchar[pixelNum * 4];
+	float* shadowMap = new float[shadowWidth * shadowWidth];
+	float* depthBuffer = new float[pixelNum];
+	uchar* colorBuffer = new uchar[pixelNum * 4];
 
 	ConstantBuffer cameraCb;
 	ConstantBuffer lightCb;
@@ -116,7 +114,6 @@ void Scene::render(uchar* buffer) {
 	mainLight.bindConstantBuffer(lightCb);
 	mainLight.camera->bindData(&triangles, &vertices, &normals, &texCoords, &colors, &completeTris);
 
-	setConstantBuffer(&cameraCb, &mainLight, &mainCamera, &modelMatrix, &globalMaterial);
 
 
 
@@ -126,6 +123,8 @@ void Scene::render(uchar* buffer) {
 	mainCamera.bindDepthBuffer(depthBuffer, imageWidth, imageHeight);
 	mainCamera.bindShadowMap(shadowMap, shadowWidth);
 	//mainCamera.bindConstantBuffer(&cameraCb);
+
+	setConstantBuffer(&cameraCb, &mainLight, &mainCamera, &modelMatrix, &globalMaterial);
 	mainCamera.bindConstantBuffer(cameraCb);
 
 
@@ -144,21 +143,22 @@ void Scene::render(uchar* buffer) {
 	//MyTransform::print(cameraCb.lightShadowViewMatrix);
 
 
-	//std::vector<uchar> temp(pixelNum*4);
-	//for (int i = 0; i < shadowWidth; ++i) {
-	//	for (int j = 0; j < shadowWidth; ++j) {
-	//	 int index = i + j * imageWidth;
-	//	 int pixelIndex = i + j * shadowWidth;
-	//	 temp[4 * index] = uchar(shadowMap[pixelIndex] * 255.99f);
-	//	 //if (shadowMap[pixelIndex] != 0)
-	//		//qDebug("shadowMap[%d] = %f", pixelIndex, shadowMap[pixelIndex]);
-	//	 temp[4 * index + 3] = 255;
-	//	}
-	//}
-	//memcpy(buffer, temp.data(), pixelNum*4);
-
-	//return;
-
+	if (displayShadowMap) {
+		std::vector<uchar> temp(shadowWidth * shadowWidth *4);
+		float gamma = 1 / 2.2;
+		for (int i = 0; i < shadowWidth; ++i) {
+			for (int j = 0; j < shadowWidth; ++j) {
+			 //int index = i + j * imageWidth;
+			 int index = i + j * shadowWidth;
+			 int pixelIndex = i + j * shadowWidth;
+			 temp[4 * index] = uchar(std::pow(shadowMap[pixelIndex], gamma) * 255);
+			 //if (shadowMap[pixelIndex] != 0)
+				//qDebug("shadowMap[%d] = %f", pixelIndex, shadowMap[pixelIndex]);
+			 temp[4 * index + 3] = 255;
+			}
+		}
+		memcpy(dBuffer, temp.data(), shadowWidth * shadowWidth*4);
+	}
 
 	//std::thread cameraThread(&Camera::renderDepthBuffer, &mainCamera);
 
@@ -173,7 +173,7 @@ void Scene::render(uchar* buffer) {
 	//fut1.waitForFinished();
 	//fut2.waitForFinished();
 
-	mainCamera.renderDepthBuffer();
+	//mainCamera.renderDepthBuffer();
 
 	//std::vector<uchar> temp(pixelNum * 4);
 	//for (int i = 0; i < imageWidth; ++i) {
@@ -193,11 +193,14 @@ void Scene::render(uchar* buffer) {
 	mainCamera.renderColorBuffer();
 
 
-
 	memcpy(buffer, mainCamera.getColorBuffer(), pixelNum * 4);
+
+	delete[] shadowMap;
+	delete[] depthBuffer;
+	delete[] colorBuffer;
 }
 
-void Scene::resetCamera()
+void Scene::resetCamera(int imageWidth, int imageHeight)
 {
 	mainCamera.setPosition(Vector3f(0, 0, -4));
 	mainCamera.setTarget(Vector3f(0, 0, 0));
@@ -207,15 +210,31 @@ void Scene::resetCamera()
 	mainCamera.setRatio(float(imageWidth) / float(imageHeight));
 	mainCamera.setNear(0.1);
 	mainCamera.setFar(1000);
+
+
+	//qDebug("before reset camera, transform = ");
+	//MyTransform::print(mainCamera.getWorldToCamera());
+	//qDebug("before reset camera, projection = ");
+	//MyTransform::print(mainCamera.getProjection());
+
+	mainCamera.updateTransform();
+	mainCamera.updateProjection();
+
+
+	//qDebug("after reset camera, transform = ");
+	//MyTransform::print(mainCamera.getWorldToCamera());
+	//qDebug("after reset camera, projection = ");
+	//MyTransform::print(mainCamera.getProjection());
 }
 
 void Scene::resetLight()
 {
-	mainLight.color = Vector3f(1, 1, 1);
-	//mainLight.direction = Vector3f(0, 1, 0);
-	//mainLight.position = Vector3f(0, 2, 0);
-	mainLight.direction = Vector3f(1, 1, 0);
-	mainLight.position = Vector3f(2, 2, 0);
+	//mainLight.color = Vector3f(1, 1, 1);
+	mainLight.color = lightColor * lightIntensity;
+	mainLight.direction = Vector3f(0, 1, 0);
+	mainLight.position = Vector3f(0, 3, 0);
+	//mainLight.direction = Vector3f(1, 1, 0);
+	//mainLight.position = Vector3f(2, 2, 0);
 
 	//mainLight.direction = Vector3f(1, 1, 0);
 	//mainLight.position = Vector3f(10, 10, 0);
@@ -234,7 +253,7 @@ void Scene::loadModel(const std::string& filename)
 	//std::string inputfile = "./models/spot/spot_triangulated_good.obj";
 	//std::string inputfile = "./models/bunny/bunny.obj";
 	tinyobj::ObjReaderConfig reader_config;
-	reader_config.mtl_search_path = "./models/spot/"; // Path to material files
+	//reader_config.mtl_search_path = "./models/spot/"; // Path to material files
 	//reader_config.mtl_search_path = "./models/bunny/"; // Path to material files
 
 	//tinyobj::ObjReader reader;
@@ -252,96 +271,96 @@ void Scene::loadModel(const std::string& filename)
 		qDebug() << "TinyObjReader: " << QString::fromStdString(reader.Warning());
 	}
 
-	auto& attrib = reader.GetAttrib();
-	auto& shapes = reader.GetShapes();
-	auto& materials = reader.GetMaterials();
+	//auto& attrib = reader.GetAttrib();
+	//auto& shapes = reader.GetShapes();
+	//auto& materials = reader.GetMaterials();
 
-	int numVertices = attrib.vertices.size() / 3;
-	int numTriangles = shapes[0].mesh.num_face_vertices.size();
-	triangles.resize(numTriangles);
-	vertices.resize(numVertices);
-	normals.resize(numVertices);
-	texCoords.resize(numVertices);
-	colors.resize(numVertices);
-	completeTris.resize(numTriangles);
+	//int numVertices = attrib.vertices.size() / 3;
+	//int numTriangles = shapes[0].mesh.num_face_vertices.size();
+	//triangles.resize(numTriangles);
+	//vertices.resize(numVertices);
+	//normals.resize(numVertices);
+	//texCoords.resize(numVertices);
+	//colors.resize(numVertices);
+	//completeTris.resize(numTriangles);
 
-	for (int i = 0; i < numTriangles; ++i) {
-		triangles[i].x() = shapes[0].mesh.indices[3*i + 0].vertex_index;
-		triangles[i].y() = shapes[0].mesh.indices[3*i + 1].vertex_index;
-		triangles[i].z() = shapes[0].mesh.indices[3*i + 2].vertex_index;
-	}
+	//for (int i = 0; i < numTriangles; ++i) {
+	//	triangles[i].x() = shapes[0].mesh.indices[3*i + 0].vertex_index;
+	//	triangles[i].y() = shapes[0].mesh.indices[3*i + 1].vertex_index;
+	//	triangles[i].z() = shapes[0].mesh.indices[3*i + 2].vertex_index;
+	//}
 
-	float miny = 100;
-	for (int i = 0; i < numVertices; ++i) {
-		vertices[i].x() = attrib.vertices[3 * i + 0];
-		vertices[i].y() = attrib.vertices[3 * i + 1];
-		vertices[i].z() = attrib.vertices[3 * i + 2];
-		miny = std::min(miny, vertices[i].y());
+	//float miny = 100;
+	//for (int i = 0; i < numVertices; ++i) {
+	//	vertices[i].x() = attrib.vertices[3 * i + 0];
+	//	vertices[i].y() = attrib.vertices[3 * i + 1];
+	//	vertices[i].z() = attrib.vertices[3 * i + 2];
+	//	miny = std::min(miny, vertices[i].y());
 
-		normals[i].x() = attrib.normals[3 * i + 0];
-		normals[i].y() = attrib.normals[3 * i + 1];
-		normals[i].z() = attrib.normals[3 * i + 2];
+	//	normals[i].x() = attrib.normals[3 * i + 0];
+	//	normals[i].y() = attrib.normals[3 * i + 1];
+	//	normals[i].z() = attrib.normals[3 * i + 2];
 
-		texCoords[i].x() = attrib.texcoords[2 * i + 0];
-		texCoords[i].y() = attrib.texcoords[2 * i + 1];
+	//	texCoords[i].x() = attrib.texcoords[2 * i + 0];
+	//	texCoords[i].y() = attrib.texcoords[2 * i + 1];
 
-		colors[i].x() = attrib.colors[3 * i + 0];
-		colors[i].y() = attrib.colors[3 * i + 1];
-		colors[i].z() = attrib.colors[3 * i + 2];
-	}
-	//qDebug("miny = %f", miny);
+	//	colors[i].x() = attrib.colors[3 * i + 0];
+	//	colors[i].y() = attrib.colors[3 * i + 1];
+	//	colors[i].z() = attrib.colors[3 * i + 2];
+	//}
+	////qDebug("miny = %f", miny);
 
-	for (int i = 0; i < triangles.size(); ++i) {
-		Vector3i indices = triangles[i];
-		Triangle tri;
-		int x = indices.x();
-		int y = indices.y();
-		int z = indices.z();
+	//for (int i = 0; i < triangles.size(); ++i) {
+	//	Vector3i indices = triangles[i];
+	//	Triangle tri;
+	//	int x = indices.x();
+	//	int y = indices.y();
+	//	int z = indices.z();
 
-		Vector3f a = vertices[x];
-		Vector3f b = vertices[y];
-		Vector3f c = vertices[z];
+	//	Vector3f a = vertices[x];
+	//	Vector3f b = vertices[y];
+	//	Vector3f c = vertices[z];
 
-		tri.v[0] = Vector4f(a.x(), a.y(), a.z(), 1.0);
-		tri.v[1] = Vector4f(b.x(), b.y(), b.z(), 1.0);
-		tri.v[2] = Vector4f(c.x(), c.y(), c.z(), 1.0);
+	//	tri.v[0] = Vector4f(a.x(), a.y(), a.z(), 1.0);
+	//	tri.v[1] = Vector4f(b.x(), b.y(), b.z(), 1.0);
+	//	tri.v[2] = Vector4f(c.x(), c.y(), c.z(), 1.0);
 
-		tri.normals[0] = normals[x];
-		tri.normals[1] = normals[y];
-		tri.normals[2] = normals[z];
+	//	tri.normals[0] = normals[x];
+	//	tri.normals[1] = normals[y];
+	//	tri.normals[2] = normals[z];
 
 
-		Vector3f crossNormal = -((b - a).cross(c - b)).normalized();
-		Vector3f aveNormal = (normals[x] + normals[y] + normals[z]).normalized();
+	//	Vector3f crossNormal = -((b - a).cross(c - b)).normalized();
+	//	Vector3f aveNormal = (normals[x] + normals[y] + normals[z]).normalized();
 
-		if (crossNormal.dot(aveNormal) < 0) {
-			std::swap(triangles[i].x(), triangles[i].z());
-			std::swap(tri.v[0], tri.v[2]);
-			std::swap(tri.normals[0], tri.normals[2]);
-		}
+	//	if (crossNormal.dot(aveNormal) < 0) {
+	//		std::swap(triangles[i].x(), triangles[i].z());
+	//		std::swap(tri.v[0], tri.v[2]);
+	//		std::swap(tri.normals[0], tri.normals[2]);
+	//	}
 
-		completeTris[i] = tri;
+	//	completeTris[i] = tri;
 
-		//for (int i = 0; i < 3; ++i) {
-		//	qDebug("tri.v[i] = (%f, %f, %f, %f)", i, tri.v[i].x(), tri.v[i].y(), tri.v[i].z(), tri.v[i].w());
-		//}
-	}
+	//	//for (int i = 0; i < 3; ++i) {
+	//	//	qDebug("tri.v[i] = (%f, %f, %f, %f)", i, tri.v[i].x(), tri.v[i].y(), tri.v[i].z(), tri.v[i].w());
+	//	//}
+	//}
 }
 
-void Scene::setClearColor(const Vector4f& color)
-{
-	int pixIndex = 0;
-	clearColor = color;
-	for (int i = 0; i < imageWidth; ++i) {
-		for (int j = 0; j < imageHeight; ++j) {
-			clearBuffer[pixIndex + 0] = clearColor.x();
-			clearBuffer[pixIndex + 1] = clearColor.y();
-			clearBuffer[pixIndex + 2] = clearColor.z();
-			clearBuffer[pixIndex + 3] = clearColor.w();
-			pixIndex += 4;
-		}
-	}
-}
+//void Scene::setClearColor(const Vector4f& color)
+//{
+//	int pixIndex = 0;
+//	clearColor = color;
+//	for (int i = 0; i < imageWidth; ++i) {
+//		for (int j = 0; j < imageHeight; ++j) {
+//			clearBuffer[pixIndex + 0] = clearColor.x();
+//			clearBuffer[pixIndex + 1] = clearColor.y();
+//			clearBuffer[pixIndex + 2] = clearColor.z();
+//			clearBuffer[pixIndex + 3] = clearColor.w();
+//			pixIndex += 4;
+//		}
+//	}
+//}
 
 void Scene::updateCameraVfov(float step) {
 	float fov = mainCamera.vfov;
@@ -406,6 +425,14 @@ void Scene::setConstantBuffer(ConstantBuffer* buffer, const DirectionalLight* li
 
 		buffer->lightShadowViewMatrix = light->camera->getWorldToCamera();
 		buffer->lightShadowProjMatrix = light->camera->getProjection();
+
+		//qDebug("setConstantBuffer:");
+		//qDebug("projection:");
+		//MyTransform::print(camera->getProjection());
+		//qDebug("view:");
+		//MyTransform::print(camera->getWorldToCamera());
+		//qDebug("");
+
 		buffer->lightShadowMap = light->camera->getDepthBuffer();
 		buffer->lightShadowWidth = light->camera->getWidth();
 		buffer->lightType = light->lightType;
@@ -420,6 +447,7 @@ void Scene::setConstantBuffer(ConstantBuffer* buffer, const DirectionalLight* li
 		buffer->worldToCamera = camera->worldToCamera;
 		buffer->projection = camera->projection;
 		buffer->cameraType = camera->type;
+		buffer->depthBuffer = camera->getDepthBuffer();
 	}
 
 	if (objectToWorld) {
@@ -428,6 +456,3 @@ void Scene::setConstantBuffer(ConstantBuffer* buffer, const DirectionalLight* li
 	buffer->material = material;
 }
 
-void Scene::update() {
-
-}
