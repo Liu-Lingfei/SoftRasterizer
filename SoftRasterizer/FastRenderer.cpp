@@ -22,6 +22,7 @@ void FastRenderer::renderColorBuffer()
     if (enableEarlyZ) {
         renderBuffer(0);
     }
+    
 
     renderBuffer(1);
 }
@@ -82,14 +83,27 @@ void FastRenderer::bindData(
     this->completeTris = completeTris;
 }
 
-void FastRenderer::bindColorBuffer(uchar* cb, int width, int height) { colorBuffer = cb; screenWidth = width; screenHeight = height; }
+void FastRenderer::disposeData()
+{
+}
+
+void FastRenderer::bindColorBuffer(uchar* cb, int width, int height)
+{
+    colorBuffer = cb; screenWidth = width; screenHeight = height;
+}
 
 void FastRenderer::disposeColorBuffer()
 {
     colorBuffer = nullptr;
 }
 
-void FastRenderer::bindDepthBuffer(float* db, int width, int height) { depthBuffer = db; screenWidth = width; screenHeight = height; }
+void FastRenderer::bindDepthBuffer(float* db, int width, int height)
+{
+    depthBuffer = db;
+    screenWidth = width;
+    screenHeight = height;
+
+}
 
 void FastRenderer::disposeDepthBuffer()
 {
@@ -164,7 +178,7 @@ void FastRenderer::renderBuffer(int renderType)
     //}
 
     //if (renderType == 1) {
-    if (true) {
+    if (false) {
 
         std::vector<QFuture<void>> qfs;
         int numThreads = 6;
@@ -239,18 +253,30 @@ Vector4f FastRenderer::screenMapping(int width, int height, Vector4f clipSpaceCo
     return screenSpaceCoord;
 }
 
-void FastRenderer::barycentricInterpolation(FragmentInput& output, const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord)
+void FastRenderer::barycentricInterpolation(FragmentInput& output, const FragmentInput* vertices, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord)
 {
     output.positionWS = perspectiveBaryCoord.x() * vertices[0].positionWS + perspectiveBaryCoord.y() * vertices[1].positionWS + perspectiveBaryCoord.z() * vertices[2].positionWS;
     output.positionCS = perspectiveBaryCoord.x() * vertices[0].positionCS + perspectiveBaryCoord.y() * vertices[1].positionCS + perspectiveBaryCoord.z() * vertices[2].positionCS;
     //output.texCoord = perspectiveBaryCoord.x() * vertices[0].texCoord + perspectiveBaryCoord.y() * vertices[1].texCoord + perspectiveBaryCoord.z() * vertices[2].texCoord;
     output.shadowCoord = perspectiveBaryCoord.x() * vertices[0].shadowCoord + perspectiveBaryCoord.y() * vertices[1].shadowCoord + perspectiveBaryCoord.z() * vertices[2].shadowCoord;
+    //output.shadowCoord = baryCoord.x() * vertices[0].shadowCoord + baryCoord.y() * vertices[1].shadowCoord + baryCoord.z() * vertices[2].shadowCoord;
+    //output.shadowCoord.head(2) =
+    //    perspectiveBaryCoord.x() * vertices[0].shadowCoord.head(2) +
+    //    perspectiveBaryCoord.y() * vertices[1].shadowCoord.head(2) +
+    //    perspectiveBaryCoord.z() * vertices[2].shadowCoord.head(2);
+    //output.shadowCoord.tail(2) =
+    //    baryCoord.x() * vertices[0].shadowCoord.tail(2) +
+    //    baryCoord.y() * vertices[1].shadowCoord.tail(2) +
+    //    baryCoord.z() * vertices[2].shadowCoord.tail(2);
+
     output.normalWS = perspectiveBaryCoord.x() * vertices[0].normalWS + perspectiveBaryCoord.y() * vertices[1].normalWS + perspectiveBaryCoord.z() * vertices[2].normalWS;
     output.normalWS.normalize();
 }
 
-void FastRenderer::depthRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord)
+void FastRenderer::depthRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord)
 {
+	//if (depthBuffer[index] > 0)
+		//qDebug("depth = %f, depthBuffer = %f", depth, depthBuffer[index]);
     depthBuffer[index] = depth;
 }
 
@@ -259,14 +285,20 @@ void FastRenderer::depthRenderer(int index, float depth, const FragmentInput* fi
 //    *depthIndex = depth;
 //}
 
-void FastRenderer::colorRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord)
+void FastRenderer::colorRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord)
 {
     depthBuffer[index] = depth;
     //FragmentInput input = barycentricInterpolation(fi, perspectiveBaryCoord);
     FragmentInput input;
-    barycentricInterpolation(input, fi, perspectiveBaryCoord);
+    barycentricInterpolation(input, fi, baryCoord, perspectiveBaryCoord);
 
     //Vector3f color = constantBuffer->material->fragmentShader(*constantBuffer, constantBuffer->material->shaderProps, input);
+
+    //qDebug("lightShadowProjMatrix = ");
+    //MyTransform::print(constantBuffer.lightShadowProjMatrix);
+    //qDebug("lightShadowViewMatrix = ");
+    //MyTransform::print(constantBuffer.lightShadowViewMatrix);
+
     Vector3f color = constantBuffer.material->fragmentShader(constantBuffer, constantBuffer.material->shaderProps, input);
 
     color.x() = std::min(color.x(), 1.0f);
@@ -291,6 +323,33 @@ int FastRenderer::renderSingleTriangle(const Triangle& tri, int renderType, int 
         vi.normalOS = tri.normals[i];
         fi[i] = constantBuffer.material->vertexShader(constantBuffer, constantBuffer.material->shaderProps, vi);
     }
+
+   // if (triIndex == -2) {
+   //     if (renderType == 0) {
+			//for (int i = 0; i < 3; ++i) {
+			//	//qDebug("tri.v[%d] = (%f, %f, %f, %f)", i, tri.v[i].x(), tri.v[i].y(), tri.v[i].z(), tri.v[i].w());
+			//	qDebug("fi[%d].positionCS = (%f, %f, %f, %f)", i, fi[i].positionCS.x(), fi[i].positionCS.y(), fi[i].positionCS.z(), fi[i].positionCS.w());
+   //             Vector4f temp;
+   //             temp.head(2) = fi[i].positionCS.head(2) / fi[i].positionCS.w() * 0.5 + Vector2f(0.5, 0.5);
+   //             temp.z() = fi[i].positionCS.z() / fi[i].positionCS.w();
+			//	temp.w() = 1.0f / fi[i].positionCS.w();
+			//	qDebug("fi[%d].screenSpace = (%f, %f, %f, %f)", i, temp.x(), temp.y(), temp.z(), temp.w());
+			//	//qDebug("fi[%d].shadowCoord = (%f, %f, %f, %f)", i, fi[i].shadowCoord.x(), fi[i].shadowCoord.y(), fi[i].shadowCoord.z(), fi[i].shadowCoord.w());
+			//}
+   //     }
+   //     if (renderType == 1) {
+			//for (int i = 0; i < 3; ++i) {
+			//	//qDebug("tri.v[%d] = (%f, %f, %f, %f)", i, tri.v[i].x(), tri.v[i].y(), tri.v[i].z(), tri.v[i].w());
+			//	//qDebug("fi[%d].positionCS = (%f, %f, %f, %f)", i, fi[i].positionCS.x(), fi[i].positionCS.y(), fi[i].positionCS.z(), fi[i].positionCS.w());
+			//	qDebug("fi[%d].shadowCoord = (%f, %f, %f, %f)", i, fi[i].shadowCoord.x(), fi[i].shadowCoord.y(), fi[i].shadowCoord.z(), fi[i].shadowCoord.w());
+			//}
+   //     }
+   // }
+
+    //for (int i = 0; i < 3; ++i) {
+    //    qDebug("tri.v[i] = (%f, %f, %f, %f)", i, tri.v[i].x(), tri.v[i].y(), tri.v[i].z(), tri.v[i].w());
+    //    qDebug("fi[%d].positionCS = (%f, %f, %f, %f)", i, fi[i].positionCS.x(), fi[i].positionCS.y(), fi[i].positionCS.z(), fi[i].positionCS.w());
+    //}
 
     if (constantBuffer.cameraType == 0) {
         Vector3f viewDirs[3];
@@ -359,48 +418,18 @@ int FastRenderer::renderSingleTriangle(const Triangle& tri, int renderType, int 
     for (int x = iminx; x <= imaxx; x++) {
         for (int y = iminy; y <= imaxy; y++) {
             int pixelIndex = x + (screenHeight - 1 - y) * screenWidth;
-
-            if (renderType == 1) {
-				bool inside = screenSpaceTri.pointInsideTriangle(x + 0.5, y + 0.5, baryCoord, perspectiveBaryCoord);
-				float depth = baryCoord.x() * screenSpaceTri.v[0].z() + baryCoord.y() * screenSpaceTri.v[1].z() + baryCoord.z() * screenSpaceTri.v[2].z();
-				//if (x == 960 && y == 500) {
-				//	qDebug("triangle Index = %d, "
-    //                    "depth = %f, depthBuffer = %f, inside = %d "
-    //                    "baryCoord = (%f, %f, %f), perspective = (%f, %f, %f)",
-
-    //                    triIndex,
-    //                    depth, depthBuffer[pixelIndex], inside,
-    //                    baryCoord.x(), baryCoord.y(), baryCoord.z(),
-    //                    perspectiveBaryCoord.x(), perspectiveBaryCoord.y(), perspectiveBaryCoord.z()
-    //                );
-				//}
-            }
+			//depthBuffer[pixelIndex] = 1;
+            //qDebug("depthBuffer = %p", depthBuffer);
             if (screenSpaceTri.pointInsideTriangle(x + 0.5, y + 0.5, baryCoord, perspectiveBaryCoord)) {
+                // 1/z, thus shouldn't use perspective interpolation
                 float depth = baryCoord.x() * screenSpaceTri.v[0].z() + baryCoord.y() * screenSpaceTri.v[1].z() + baryCoord.z() * screenSpaceTri.v[2].z();
 
                 if (depth > 0 && depth < 1 && depth >= depthBuffer[pixelIndex]) {
-                    if (renderType == 0) depthRenderer(pixelIndex, depth, fi, perspectiveBaryCoord);
-                    else colorRenderer(pixelIndex, depth, fi, perspectiveBaryCoord);
+                    //if (depthBuffer[pixelIndex] > 0)
+						//qDebug("depth = %f, depthBuffer = %f", depth, depthBuffer[pixelIndex]);
+                    if (renderType == 0) depthRenderer(pixelIndex, depth, fi, baryCoord, perspectiveBaryCoord);
+                    else colorRenderer(pixelIndex, depth, fi, baryCoord, perspectiveBaryCoord);
                 }
-      //          if (renderType == 0) {
-      //              if (depth > 0 && depth < 1 && depth >= depthBuffer[pixelIndex]) {
-						//depthRenderer(pixelIndex, depth, fi, perspectiveBaryCoord);
-      //              }
-      //          }
-      //          else {
-      //              
-      //              //if (depth > 0 && depth < 1 && depth >= depthBuffer[pixelIndex]) {
-      //              if (depth == depthBuffer[pixelIndex]) {
-      //                  colorRenderer(pixelIndex, depth, fi, perspectiveBaryCoord);
-      //              }
-      //          }
-
-				//if (renderType == 1 && x == 960 && y == 500) {
-    //                qDebug("colorBuffer = (%f, %f, %f)", 
-    //                    colorBuffer[pixelIndex * 4 + 0],
-    //                    colorBuffer[pixelIndex * 4 + 1],
-    //                    colorBuffer[pixelIndex * 4 + 2]);
-				//}
             }
         }
     }

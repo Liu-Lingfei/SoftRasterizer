@@ -13,14 +13,13 @@ struct ConstantBuffer;
 class Camera
 {
 public:
-	//Camera(int type = 0, const Vector3f& p = Vector3f::Zero(), const Vector3f& t = Vector3f::Zero(), const Vector3f& u = Vector3f::Zero());
 
-	Camera(int type=0, const Vector3f& p=Vector3f::Zero(), const Vector3f& t=Vector3f::Zero(), const Vector3f& u=Vector3f::Zero()) :
+	Camera(int type=0, const Vector3f& p=Vector3f::Zero(), const Vector3f& t=Vector3f(0, 0, 1), const Vector3f& u=Vector3f(0, 1, 0)) :
 		type(type),
 		pos(p), target(t), up(u),
-		near(0), far(0),
-		left(0), right(0), bottom(0), top(0),
-		vfov(0), ratio(0),
+		near(1), far(1000),
+		left(-1), right(1), bottom(-1), top(1),
+		vfov(90), ratio(1),
 		x(Vector3f::Zero()), y(Vector3f::Zero()), z(Vector3f::Zero()),
 		worldToCamera(Matrix4f::Identity()),
 		cameraToWorld(Matrix4f::Identity()),
@@ -30,7 +29,30 @@ public:
 		//depthBuffer(nullptr),
 		//colorBuffer(nullptr),
 		//constantBuffer(nullptr)
-	{}
+	{
+		updateTransform();
+		updateProjection();
+	}
+
+	//Camera(int type = 0, const Vector3f& p = Vector3f::Zero(), const Vector3f& t = Vector3f(0, 0, 1), const Vector3f& u = Vector3f(0, 1, 0)) :
+	//	type(type),
+	//	pos(p), target(t), up(u),
+	//	near(1), far(1000),
+	//	left(-1), right(1), bottom(-1), top(1),
+	//	vfov(90), ratio(1),
+	//	//x(Vector3f::Zero()), y(Vector3f::Zero()), z(Vector3f::Zero()),
+	//	//worldToCamera(Matrix4f::Identity()),
+	//	//cameraToWorld(Matrix4f::Identity()),
+	//	//projection(Matrix4f::Zero()),
+	//	renderer(nullptr)
+	//	//shadowMap(nullptr),
+	//	//depthBuffer(nullptr),
+	//	//colorBuffer(nullptr),
+	//	//constantBuffer(nullptr)
+	//{
+	//	updateTransform();
+	//	updateProjection();
+	//}
 
 	void renderColorBuffer();
 	void renderDepthBuffer();

@@ -51,8 +51,8 @@ struct Scene
 
 	void update();
 
-	const int imageWidth = 1920;
-	const int imageHeight = 1080;
+	int imageWidth = 1920;
+	int imageHeight = 1080;
 
 	Matrix4f modelMatrix;
 	tinyobj::ObjReader reader;

@@ -5,7 +5,6 @@ bool enableSoftShadow = false;
 int numSamples = 5;
 int numRings = 5;
 int filterSize = 5;
-int shadowMapWidth = 1024;
 
 void setSoftShadow(bool enable) {
 	enableSoftShadow = enable;
@@ -21,10 +20,6 @@ void setNumRings(int n) {
 
 void setFilterSizse(int n) {
 	filterSize = n;
-}
-
-void setShadowMapWidth(int w) {
-	shadowMapWidth = w;
 }
 
 template<typename T>
@@ -99,27 +94,22 @@ void poissonDiskSamples(const Vector2f& randomSeed)
 	}
 }
 
-float findBlocker(float* shadowMap, const Vector2f& uv, float zReceiver) {
-
-	//const int shadowMapWidth = 1024;
+float findBlocker(const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth)
+{
 	int count = 0;
 	float blockerDepth = 0.0;
-	//for (int i = 0; i < NUM_SAMPLES; ++i) {
 	for (int i = 0; i < numSamples; ++i) {
-		//vec4 rgbaDepth = texture2D(shadowMap, uv + poissonDisk[i] * 0.005);
-		//float depth = unpack(rgbaDepth);
-		int index = uv.x() + (shadowMapWidth - 1 - uv.y()) * shadowMapWidth;
-		float depth = shadowMap[index];
-		//if (depth < EPS) depth = 1.0;
-		if (zReceiver > depth + 0.005) {
-			blockerDepth += depth;
+		int index = uv.x() + (shadowWidth - 1 - uv.y()) * shadowWidth;
+		float sampledDepth = shadowMap[index];
+		if (depth <= sampledDepth) {
+			blockerDepth += sampledDepth;
 			count++;
 		}
 	}
 	return blockerDepth / float(count);
 }
 
-float PCF(const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth)
+float PCF(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth)
 {
 	//const int shadowMapWidth = 1024;
 	//Vector2f seed(rand() / double(RAND_MAX), rand() / double(RAND_MAX));
@@ -132,16 +122,16 @@ float PCF(const float* shadowMap, int shadowWidth, const Vector2f& uv, float dep
 
 		//Vector2f sampleUV = uv + poissonDisk[i]*filterSize;
 		//Vector2f sampleUV = uv;
-		int x = uv.x() * shadowMapWidth;
-		int y = uv.y() * shadowMapWidth;
+		int x = uv.x() * shadowWidth;
+		int y = uv.y() * shadowWidth;
 		x += poissonDisk[i].x() * filterSize;
 		y += poissonDisk[i].y() * filterSize;
 		x = std::max(0, x);
-		x = std::min(shadowMapWidth - 1, x);
+		x = std::min(shadowWidth - 1, x);
 		y = std::max(0, y);
-		y = std::min(shadowMapWidth - 1, y);
+		y = std::min(shadowWidth - 1, y);
 
-		int index = x + (shadowMapWidth - 1 - y) * shadowMapWidth;
+		int index = x + (shadowWidth - 1 - y) * shadowWidth;
 		float sampledDepth = shadowMap[index];
 		if (depth >= sampledDepth) ++count;
 		//for (int i = 0; i < numSamples; ++i) {
@@ -153,33 +143,102 @@ float PCF(const float* shadowMap, int shadowWidth, const Vector2f& uv, float dep
 	return float(count) / float(numSamples);
 }
 
-float sampleShadowMap(const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth, float NdotL)
+
+float PCSS(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth) {
+
+	// STEP 1: avgblocker depth
+	//poissonDiskSamples(coords.xy);
+	float blockerDepth = findBlocker(shadowMap, shadowWidth, uv, depth);
+	float linearBlockerDepth = linearDepth(cb, blockerDepth);
+	float linear = linearDepth(cb, depth);
+
+	// STEP 2: penumbra size
+	//float penumbra = (depth - blockerDepth) * 0.005 / blockerDepth;
+	//float penumbra = (blockerDepth - depth) * 0.5 / blockerDepth;
+	float penumbra = (linear - linearBlockerDepth) * 0.1 / linearBlockerDepth;
+	float filterWidthInPixel = penumbra * shadowWidth / linear;
+
+	//qDebug("depth = %f, blockerDepth = %f, penumbra = %f", depth, blockerDepth, penumbra);
+	//qDebug("linearDepth = %f, linearBlockerDepth = %f, penumbra = %f", linear, linearBlockerDepth, penumbra);
+
+	//qDebug("filterWidthInPixel = %f", filterWidthInPixel);
+
+	// STEP 3: filtering
+	int count = 0;
+	for (int i = 0; i < numSamples; ++i) {
+
+		//vec4 rgbaDepth = texture2D(shadowMap, coords.xy + poissonDisk[i] * penumbra * 0.5);
+		//float depth = unpack(rgbaDepth);
+		//if (depth < EPS) depth = 1.0;
+
+
+		int x = uv.x() * shadowWidth;
+		int y = uv.y() * shadowWidth;
+		x += poissonDisk[i].x() * filterWidthInPixel;
+		y += poissonDisk[i].y() * filterWidthInPixel;
+		x = std::max(0, x);
+		x = std::min(shadowWidth - 1, x);
+		y = std::max(0, y);
+		y = std::min(shadowWidth - 1, y);
+
+		int index = x + (shadowWidth - 1 - y) * shadowWidth;
+		float sampledDepth = shadowMap[index];
+
+		if (depth >= sampledDepth) count += 1;
+	}
+
+	return float(count) / float(numSamples);
+}
+
+float sampleShadowMap(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth, float NdotL)
 {
-	//const int shadowMapWidth = 1024;
+	int x = uv.x() * shadowWidth;
+	int y = uv.y() * shadowWidth;
 
-	int x = uv.x() * shadowMapWidth;
-	int y = uv.y() * shadowMapWidth;
-
-	if (x < 0 || x >= shadowMapWidth || y < 0 || y >= shadowMapWidth) {
+	if (x < 0 || x >= shadowWidth || y < 0 || y >= shadowWidth) {
 		return 1;
 	}
 
-	y = shadowMapWidth - 1 - y;
+	y = shadowWidth - 1 - y;
 
 
-	float bias = std::max(0.001f, 1.0f / 512 * (1.0f - NdotL));
+	float sine = std::sqrt(1.0f - NdotL * NdotL);
+	float bias = std::max(0.001f, 0.01f * sine);
 
 
-	return PCF(shadowMap, shadowWidth, uv, depth + bias);
-	float shadowDepth = shadowMap[x + y * shadowMapWidth];
-	return depth + bias >= shadowDepth;
+	//return PCF(shadowMap, shadowWidth, uv, depth + bias);
+	float shadowDepth = shadowMap[x + y * shadowWidth];
+	//if (shadowDepth != 0) {
+		//qDebug("depth = %f, shadowDepth = %f", depth, shadowDepth);
+	//}
+	//return depth + bias >= shadowDepth;
 
 	if (enableSoftShadow) {
-		return PCF(shadowMap, shadowWidth, uv, depth + bias);
+		if (cb.lightType == 0)
+			return PCF(cb, shadowMap, shadowWidth, uv, depth + bias);
+		else
+			return PCSS(cb, shadowMap, shadowWidth, uv, depth + bias);
 	}
 	else {
-		float shadowDepth = shadowMap[x + y * shadowMapWidth];
+		float shadowDepth = shadowMap[x + y * shadowWidth];
 		return depth + bias >= shadowDepth;
+	}
+}
+
+float linearDepth(const ConstantBuffer& cb, float depth)
+{
+	// directional light, orthographic light camera
+	if (cb.lightType == 0) {
+		return cb.lightFar - depth * (cb.lightFar - cb.lightNear);
+	}
+	// point light, perspective light camera
+	else if (cb.lightType == 1) {
+		float fn = cb.lightFar * cb.lightNear;
+		float divider = depth * (cb.lightFar - cb.lightNear) + cb.lightNear;
+		return fn / divider;
+	}
+	else {
+		return depth;
 	}
 }
 
@@ -197,8 +256,44 @@ FragmentInput CommonVertexShader(const ConstantBuffer& cb, const ShaderPropertie
 	output.positionCS = cb.projection * cb.worldToCamera * output.positionWS;
 
 	Vector4f shadowCS = cb.lightShadowProjMatrix * cb.lightShadowViewMatrix * output.positionWS;
-	output.shadowCoord.head(2) = (shadowCS.head(2) / shadowCS.w() * 0.5f) + Vector2f(0.5f, 0.5);
-	output.shadowCoord.tail(2) = shadowCS.tail(2);
+
+	//qDebug("CommonVertexShader, lightShadowProjMatrix = ");
+	//MyTransform::print(cb.lightShadowProjMatrix);
+	//qDebug("CommonVertexShader, lightShadowViewMatrix = ");
+	//MyTransform::print(cb.lightShadowViewMatrix);
+
+	output.shadowCoord = shadowCS;
+	//float invW = 1.0 / shadowCS.w();
+	//output.shadowCoord.head(2) = (shadowCS.head(2) * invW * 0.5f) + Vector2f(0.5f, 0.5);
+	//output.shadowCoord.z() = shadowCS.z() * invW;
+	//output.shadowCoord.w() = invW;
+
+	return output;
+}
+
+FragmentInput DepthVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input)
+{
+
+	FragmentInput output;
+	output.positionWS = cb.objectToWorld * input.positionOS;
+	output.positionCS = cb.projection * cb.worldToCamera * output.positionWS;
+	output.normalWS = cb.objectToWorld.topLeftCorner(3, 3) * input.normalOS;
+
+	//qDebug("CommonVertexShader, projection = ");
+	//MyTransform::print(cb.projection);
+	//qDebug("CommonVertexShader, worldToCamera = ");
+	//MyTransform::print(cb.worldToCamera);
+	//qDebug("CommonVertexShader, projection * worldToCamera = ");
+	//Matrix4f temp = cb.projection * cb.worldToCamera;
+	//MyTransform::print(temp);
+
+	//Vector4f cameraSpace = cb.worldToCamera * output.positionWS;
+	//qDebug("input.positionOS = (%f, %f, %f, %f)", input.positionOS.x(), input.positionOS.y(), input.positionOS.z(), input.positionOS.w());
+	//qDebug("output.positionWS = (%f, %f, %f, %f)", output.positionWS.x(), output.positionWS.y(), output.positionWS.z(), output.positionWS.w());
+	//qDebug("output.cameraSpace = (%f, %f, %f, %f)", cameraSpace.x(), cameraSpace.y(), cameraSpace.z(), cameraSpace.w());
+	//qDebug("output.positionCS = (%f, %f, %f, %f)", output.positionCS.x(), output.positionCS.y(), output.positionCS.z(), output.positionCS.w());
+	//qDebug("");
+
 	return output;
 }
 
@@ -214,7 +309,9 @@ Vector3f BlinnPhongFragmentShader(const ConstantBuffer& cb, const ShaderProperti
 	NdotH = std::max(0.0f, NdotH);
 	NdotL = std::max(0.0f, NdotL);
 
-	float shadowAttenuation = sampleShadowMap(cb.lightShadowMap, cb.lightShadowWidth, input.shadowCoord.head(2), input.shadowCoord.z(), NdotL);
+	Vector3f shadowCoord = computeShadowCoord(cb, input);
+	float shadowAttenuation = sampleShadowMap(cb, cb.lightShadowMap, cb.lightShadowWidth, shadowCoord.head(2), shadowCoord.z(), NdotL);
+
 	float distanceAttenuation = 1.0f;
 	//Vector3f attenuatedLightColor = mainLight.color * (mainLight.distanceAttenuation * mainLight.shadowAttenuation) * NdotL;
 	Vector3f attenuatedLightColor = cb.lightCol * (distanceAttenuation * shadowAttenuation) * NdotL;
@@ -320,8 +417,19 @@ Vector3f UnityPBRFragmentShader(const ConstantBuffer& cb, const ShaderProperties
 	float NdotL = saturate(input.normalWS.dot(cb.lightDir));
 	//float NdotL = input.normalWS.dot(cb.mainLight.direction);
 
-	float shadowAttenuation = sampleShadowMap(cb.lightShadowMap, cb.lightShadowWidth, input.shadowCoord.head(2), input.shadowCoord.z(), NdotL);
-	//float shadowAttenuation = 1.0f;
+
+	// shadowUV should be computed per pixel
+	//Vector4f shadowCS = cb.lightShadowProjMatrix * cb.lightShadowViewMatrix * input.positionWS;
+	//float invW = 1.0 / shadowCS.w();
+	//Vector2f shadowUV = (shadowCS.head(2) * invW * 0.5f) + Vector2f(0.5f, 0.5);
+	//float shadowDepth = shadowCS.z() * invW;
+	Vector3f shadowCoord = computeShadowCoord(cb, input);
+
+
+	float shadowAttenuation = sampleShadowMap(cb, cb.lightShadowMap, cb.lightShadowWidth, shadowCoord.head(2), shadowCoord.z(), NdotL);
+	//float shadowAttenuation = sampleShadowMap(cb.lightShadowMap, cb.lightShadowWidth, shadowUV, shadowDepth, NdotL);
+	//float shadowAttenuation = sampleShadowMap(cb.lightShadowMap, cb.lightShadowWidth, input.shadowCoord.head(2), input.shadowCoord.z(), NdotL);
+	//qDebug("shadowAttenuation = %f, shadowCoord.head(2) = (%f, %f)", shadowAttenuation, input.shadowCoord.x(), input.shadowCoord.y());
 
 
 	//Vector3f radiance = cb.mainLight.color * cb.mainLight.distanceAttenuation * cb.mainLight.shadowAttenuation * NdotL;
@@ -340,16 +448,12 @@ Vector3f UnityPBRFragmentShader(const ConstantBuffer& cb, const ShaderProperties
 	return (brdf.array() * radiance.array()).matrix();
 }
 
-FragmentInput ShadowMapVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input)
-{
-	FragmentInput output;
-	output.positionWS = cb.objectToWorld * input.positionOS;
-	output.positionCS = cb.projection * cb.worldToCamera * output.positionWS;
-	output.normalWS = cb.objectToWorld.topLeftCorner(3, 3) * input.normalOS;
-	return output;
-}
 
-Vector3f ShadowMapFragmentShader(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput& input)
+Vector3f computeShadowCoord(const ConstantBuffer& cb, const FragmentInput& input)
 {
-	return Vector3f(input.positionCS.z(), 0, 0);
+	Vector4f shadowCS = cb.lightShadowProjMatrix * cb.lightShadowViewMatrix * input.positionWS;
+	float invW = 1.0 / shadowCS.w();
+	Vector2f shadowUV = (shadowCS.head(2) * invW * 0.5f) + Vector2f(0.5f, 0.5);
+	float shadowDepth = shadowCS.z() * invW;
+	return Vector3f(shadowUV.x(), shadowUV.y(), shadowDepth);
 }

@@ -15,11 +15,17 @@ class Camera;
 
 struct DirectionalLight
 {
-	DirectionalLight(const Vector3f& p = Vector3f::Zero(), const Vector3f& d = Vector3f::Zero(), const Vector3f c = Vector3f::Zero());
+	// 0 for directional light, 1 for point light
+	// directional light for default
+	DirectionalLight(int lightType=0, const Vector3f& p = Vector3f::Zero(), const Vector3f& d = Vector3f::Zero(), const Vector3f c = Vector3f::Zero());
 	~DirectionalLight();
 
-	void setShadowArea(float near, float far, float left, float right, float bottom, float top);
+	void setDirectionalLightShadowArea(float near, float far, float left, float right, float bottom, float top);
+	void setPointLightLightShadowArea(float near, float far, float vfov, float ratio);
 	void updateCameraPose();
+
+	void toPointLight();
+	void toDirectionalLight();
 
 	void createRenderer();
 	void disposeRenderer();
@@ -40,14 +46,8 @@ struct DirectionalLight
 	Vector3f position;
 	Vector3f direction;
 	Vector3f color;
+	int lightType;
 	//int depthBufferWidth;
 };
-
-//struct PointLight
-//{
-//	Vector3f position;
-//	Vector3f color;
-//	Camera* cam = nullptr;
-//};
 
 #endif // !LIGHT_H

@@ -1,23 +1,11 @@
 #ifndef SHADER_H
 #define SHADER_H
 
+#include <QDebug>
 #include "Eigen/Core"
 #include "MathDefines.h"
+#include "Transform.h"
 using namespace Eigen;
-
-void setSoftShadow(bool enable);
-void setNumSamples(int n);
-void setNumRings(int n);
-void setFilterSizse(int n);
-void setShadowMapWidth(int w);
-
-
-float findBlocker(float* shadowMap, const Vector2f& uv, float zReceiver);
-void uniformDiskSamples(const Vector2f& randomSeed);
-void poissonDiskSamples(const Vector2f& randomSeed);
-float PCF(const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth);
-float sampleShadowMap(const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth, float NdotL);
-
 
 struct VertexInput {
 	Vector4f positionOS;
@@ -33,6 +21,20 @@ struct FragmentInput {
 	Vector4f shadowCoord;
 
 };
+
+
+void setSoftShadow(bool enable);
+void setNumSamples(int n);
+void setNumRings(int n);
+void setFilterSizse(int n);
+
+
+float findBlocker(const float* shadowMap, int shadowWidth, const Vector2f& uv, float zReceiver);
+void uniformDiskSamples(const Vector2f& randomSeed);
+void poissonDiskSamples(const Vector2f& randomSeed);
+
+
+
 
 struct ShaderProperties {
 	// for Blinn-Phong
@@ -50,16 +52,21 @@ struct ShaderProperties {
 
 struct ConstantBuffer;
 
+float PCF(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth);
+float PCSS(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth);
+float sampleShadowMap(const ConstantBuffer& cb, const float* shadowMap, int shadowWidth, const Vector2f& uv, float depth, float NdotL);
+float linearDepth(const ConstantBuffer& cb, float depth);
+
 typedef FragmentInput(*VertexShader)(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput&);
 typedef Vector3f(*FragmentShader)(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput&);
 
+Vector3f computeShadowCoord(const ConstantBuffer& cb, const FragmentInput& input);
 FragmentInput CommonVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input);
 Vector3f BlinnPhongFragmentShader(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput& input);
 
 Vector3f UnityPBRFragmentShader(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput& input);
 
-FragmentInput ShadowMapVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input);
-Vector3f ShadowMapFragmentShader(const ConstantBuffer& cb, const ShaderProperties& sp, const FragmentInput& input);
+FragmentInput DepthVertexShader(const ConstantBuffer& cb, const ShaderProperties& sp, const VertexInput& input);
 
 struct BRDFData
 {

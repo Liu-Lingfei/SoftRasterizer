@@ -15,11 +15,6 @@ class Camera;
 
 struct ConstantBuffer
 {
-	//void setObjectToWorld(const Matrix4f& m);
-	//void setMaterial(Material* m);
-	//void setPerCameraInfo(const Camera& cam);
-	//void setPerLightInfo(DirectionalLight& l);
-
 	// global info
 	Matrix4f objectToWorld;
 	Material* material;
@@ -39,6 +34,9 @@ struct ConstantBuffer
 	Matrix4f lightShadowProjMatrix;
 	float* lightShadowMap;
 	int lightShadowWidth;
+	int lightType;
+	int lightNear;
+	int lightFar;
 };
 
 #endif // !CONSTANT_BUFFER

@@ -4,14 +4,15 @@
 
 Scene::Scene()
 {
+	// set global info
 	Vector2f seed(rand() / double(RAND_MAX), rand() / double(RAND_MAX));
 	//poissonDiskSamples(seed, 2, 10);
 	uniformDiskSamples(seed);
 	setSoftShadow(true);
 	//setSoftShadow(false);
+	resetModelMatrix();
 
 	const int shadowWidth = 1024;
-	setShadowMapWidth(shadowWidth);
 
 	int pixelNum = imageWidth * imageHeight;
 	shadowMap = new float[shadowWidth * shadowWidth];
@@ -20,12 +21,20 @@ Scene::Scene()
 
 	loadModel("./models/spot/spot_triangulated_good.obj");
 
+
+
+
 	// reset camera
-	resetModelMatrix();
 
 	resetCamera();
 	mainCamera.updateTransform();
 	mainCamera.updateProjection();
+
+	qDebug("main camera.projection:");
+	MyTransform::print(mainCamera.projection);
+	qDebug("main camera.worldToCamera:");
+	qDebug("");
+	MyTransform::print(mainCamera.worldToCamera);
 
 	ConstantBuffer constantBuffer;
 	mainCamera.createRenderer();
@@ -35,7 +44,19 @@ Scene::Scene()
 
 	resetLight();
 	mainLight.updateCameraPose();
-	mainLight.setShadowArea(0.1, 50, -2, 2, -2, 2);
+	mainLight.toPointLight();
+	mainLight.toDirectionalLight();
+
+	mainLight.setDirectionalLightShadowArea(1, 10, -2, 2, -2, 2);
+	//mainLight.setPointLightLightShadowArea(0.1, 50, 90, 1);
+	//mainLight.setPointLightLightShadowArea(1, 1000, 90, 1);
+
+	//qDebug("mainlight.camera.ratio = %f", mainLight.camera->ratio);
+	//qDebug("mainlight.camera.vfov = %f", mainLight.camera->vfov);
+	//qDebug("mainlight.camera.projection:");
+	//MyTransform::print(mainLight.camera->projection);
+	//qDebug("mainlight.camera.worldToCamera:");
+	//MyTransform::print(mainLight.camera->worldToCamera);
 	mainLight.createRenderer();
 
 
@@ -54,8 +75,9 @@ Scene::Scene()
 	globalMaterial.fragmentShader = UnityPBRFragmentShader;
 	//globalMaterial.fragmentShader = BlinnPhongFragmentShader;
 
-	shadowMaterial.vertexShader = ShadowMapVertexShader;
-	shadowMaterial.fragmentShader = ShadowMapFragmentShader;
+	//shadowMaterial.vertexShader = CommonVertexShader;
+	shadowMaterial.vertexShader = DepthVertexShader;
+	//shadowMaterial.fragmentShader = ShadowMapFragmentShader;
 
 	//resetShadowCamera();
 
@@ -89,11 +111,15 @@ void Scene::render(uchar* buffer) {
 	setConstantBuffer(&lightCb, nullptr, mainLight.camera, &modelMatrix, &shadowMaterial);
 	mainLight.bindReader(&reader);
 	mainLight.bindDepthBuffer(shadowMap, shadowWidth);
+	//qDebug("shadowMap = %p", shadowMap);
 	//mainLight.bindConstantBuffer(&lightCb);
 	mainLight.bindConstantBuffer(lightCb);
 	mainLight.camera->bindData(&triangles, &vertices, &normals, &texCoords, &colors, &completeTris);
 
 	setConstantBuffer(&cameraCb, &mainLight, &mainCamera, &modelMatrix, &globalMaterial);
+
+
+
 	mainCamera.bindReader(&reader);
 	mainCamera.bindData(&triangles, &vertices, &normals, &texCoords, &colors, &completeTris);
 	mainCamera.bindColorBuffer(colorBuffer, imageWidth, imageHeight);
@@ -112,21 +138,25 @@ void Scene::render(uchar* buffer) {
 
 	mainLight.camera->renderDepthBuffer();
 
+	//qDebug("CommonVertexShader, lightShadowProjMatrix = ");
+	//MyTransform::print(cameraCb.lightShadowProjMatrix);
+	//qDebug("CommonVertexShader, lightShadowViewMatrix = ");
+	//MyTransform::print(cameraCb.lightShadowViewMatrix);
+
+
 	//std::vector<uchar> temp(pixelNum*4);
 	//for (int i = 0; i < shadowWidth; ++i) {
 	//	for (int j = 0; j < shadowWidth; ++j) {
 	//	 int index = i + j * imageWidth;
 	//	 int pixelIndex = i + j * shadowWidth;
 	//	 temp[4 * index] = uchar(shadowMap[pixelIndex] * 255.99f);
+	//	 //if (shadowMap[pixelIndex] != 0)
 	//		//qDebug("shadowMap[%d] = %f", pixelIndex, shadowMap[pixelIndex]);
 	//	 temp[4 * index + 3] = 255;
 	//	}
 	//}
 	//memcpy(buffer, temp.data(), pixelNum*4);
 
-	//delete[] shadowMap;
-	//delete[] depthBuffer;
-	//delete[] colorBuffer;
 	//return;
 
 
@@ -143,20 +173,33 @@ void Scene::render(uchar* buffer) {
 	//fut1.waitForFinished();
 	//fut2.waitForFinished();
 
-	//mainCamera.renderDepthBuffer();
+	mainCamera.renderDepthBuffer();
 
-	//int x = 960;
-	//int y = imageHeight - 1 - 500;
-	//int index = x + y * imageWidth;
-	//qDebug("depthBuffer[%d, %d] = %f", x, y, depthBuffer[index]);
+	//std::vector<uchar> temp(pixelNum * 4);
+	//for (int i = 0; i < imageWidth; ++i) {
+	//	for (int j = 0; j < shadowWidth; ++j) {
+	//		int index = i + j * imageWidth;
+	//		int pixelIndex = i + j * imageWidth;
+	//		temp[4 * index] = uchar(mainCamera.getDepthBuffer()[pixelIndex] * 255.99f);
+	//		//qDebug("shadowMap[%d] = %f", pixelIndex, shadowMap[pixelIndex]);
+	//		temp[4 * index + 3] = 255;
+	//	}
+	//}
+	//memcpy(buffer, temp.data(), pixelNum * 4);
+	//return;
+
+
+
 	mainCamera.renderColorBuffer();
+
+
 
 	memcpy(buffer, mainCamera.getColorBuffer(), pixelNum * 4);
 }
 
 void Scene::resetCamera()
 {
-	mainCamera.setPosition(Vector3f(0, 0, -4.0));
+	mainCamera.setPosition(Vector3f(0, 0, -4));
 	mainCamera.setTarget(Vector3f(0, 0, 0));
 	mainCamera.setUp(Vector3f(0, 1, 0));
 
@@ -170,9 +213,15 @@ void Scene::resetLight()
 {
 	mainLight.color = Vector3f(1, 1, 1);
 	//mainLight.direction = Vector3f(0, 1, 0);
-	//mainLight.position = Vector3f(0, 10, 0);
+	//mainLight.position = Vector3f(0, 2, 0);
 	mainLight.direction = Vector3f(1, 1, 0);
-	mainLight.position = Vector3f(10, 10, 0);
+	mainLight.position = Vector3f(2, 2, 0);
+
+	//mainLight.direction = Vector3f(1, 1, 0);
+	//mainLight.position = Vector3f(10, 10, 0);
+
+	//mainLight.direction = Vector3f(0, 0, -1);
+	//mainLight.position = Vector3f(0, 0, -4);
 }
 
 void Scene::resetModelMatrix()
@@ -240,7 +289,7 @@ void Scene::loadModel(const std::string& filename)
 		colors[i].y() = attrib.colors[3 * i + 1];
 		colors[i].z() = attrib.colors[3 * i + 2];
 	}
-	qDebug("miny = %f", miny);
+	//qDebug("miny = %f", miny);
 
 	for (int i = 0; i < triangles.size(); ++i) {
 		Vector3i indices = triangles[i];
@@ -272,6 +321,10 @@ void Scene::loadModel(const std::string& filename)
 		}
 
 		completeTris[i] = tri;
+
+		//for (int i = 0; i < 3; ++i) {
+		//	qDebug("tri.v[i] = (%f, %f, %f, %f)", i, tri.v[i].x(), tri.v[i].y(), tri.v[i].z(), tri.v[i].w());
+		//}
 	}
 }
 
@@ -355,6 +408,9 @@ void Scene::setConstantBuffer(ConstantBuffer* buffer, const DirectionalLight* li
 		buffer->lightShadowProjMatrix = light->camera->getProjection();
 		buffer->lightShadowMap = light->camera->getDepthBuffer();
 		buffer->lightShadowWidth = light->camera->getWidth();
+		buffer->lightType = light->lightType;
+		buffer->lightNear = light->camera->near;
+		buffer->lightFar = light->camera->far;
 		//buffer->lightShadowMap = light->depthBuffer;
 		//buffer->lightShadowWidth = light->depthBufferWidth;
 	}

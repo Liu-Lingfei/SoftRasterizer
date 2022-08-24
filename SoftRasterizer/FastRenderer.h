@@ -26,6 +26,11 @@ struct ConstantBuffer;
 //struct FragmentInput;
 class Camera;
 
+//struct FragmentInfo
+//{
+//
+//};
+
 class FastRenderer
 {
     friend class Camera;
@@ -71,7 +76,7 @@ public:
     void bindConstantBuffer(const ConstantBuffer& buffer);
     void disposeConstantBuffer();
 
-private:
+//private:
     //typedef void (FastRenderer::*PR)(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
     //void renderBuffer(PR pixelRenderer);
     void renderBuffer(int renderType);
@@ -79,10 +84,10 @@ private:
     int renderSingleTriangle(const Triangle& tri, int renderType, int triIndex);
     static Vector4f screenMapping(int width, int height, Vector4f clipSpaceCoord);
     //static FragmentInput barycentricInterpolation(const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord);
-    static void barycentricInterpolation(FragmentInput& output, const FragmentInput* vertices, const Vector3f& perspectiveBaryCoord);
+    static void barycentricInterpolation(FragmentInput& output, const FragmentInput* vertices, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord);
 
-    void depthRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
-    void colorRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& perspectiveBaryCoord);
+    void depthRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord);
+    void colorRenderer(int index, float depth, const FragmentInput* fi, const Vector3f& baryCoord, const Vector3f& perspectiveBaryCoord);
 
     int screenWidth;
     int screenHeight;
@@ -109,6 +114,8 @@ private:
     const std::vector<Vector2f>* texCoords;
     const std::vector<Vector3f>* colors;
     const std::vector<Triangle>* completeTris;
+
+    //std::vector<>
 };
 
 #endif // !FAST_RENDERER_H

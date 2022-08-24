@@ -508,6 +508,7 @@ void proc(int& a)
 
 void SoftRasterizer::paintEvent(QPaintEvent*)
 {
+    //return;
     //int a = 9;
     //int b = 4;
     //std::thread th2(proc, std::ref(a));//第一个参数为函数名，第二个参数为该函数的第一个参数，如果该函数接收多个参数就依次写在后面。此时线程开始执行。

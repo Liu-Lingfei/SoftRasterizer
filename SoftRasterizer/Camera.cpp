@@ -267,6 +267,8 @@ void Camera::updatePerspectiveProjection()
 {
 	float halfRadianFov = vfov * M_PI * 0.5 / 180.0;
 	float c = 1.0 / std::tan(halfRadianFov);
+	qDebug("helfRadianFov = %f", halfRadianFov);
+	qDebug("c = %f", c);
 
 	projection(0, 0) = c / ratio;
 	projection(1, 1) = c;
